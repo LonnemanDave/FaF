@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.466358991702-iamnbk9rg0l1ss68enmhjudrg8d75c1j</string>
+			</array>
+		</dict>
+	</array>
+	<key>GIDClientID</key>
+	<string>466358991702-iamnbk9rg0l1ss68enmhjudrg8d75c1j.apps.googleusercontent.com</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Food and Friends uses your location to help you find nearby dining spots and connect with friends in your area.</string>
+</dict>
+</plist>
