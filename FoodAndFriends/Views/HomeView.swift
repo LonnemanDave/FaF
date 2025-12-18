@@ -1,55 +1,49 @@
 import SwiftUI
 
 struct HomeView: View {
-    @ObservedObject var authManager = AuthManager.shared
     @ObservedObject var userService = UserService.shared
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: FAFSpacing.lg) {
-                Spacer()
+            ScrollView {
+                VStack(spacing: FAFSpacing.lg) {
+                    // Empty State
+                    VStack(spacing: FAFSpacing.md) {
+                        Spacer(minLength: 100)
 
-                // Welcome message
-                VStack(spacing: FAFSpacing.sm) {
-                    FAFIcon(.fork, size: 64, color: .fafCoral)
+                        FAFIcon(.fork, size: 64, color: .fafCoral)
 
-                    if let user = userService.currentUser {
-                        Text("Welcome, @\(user.username)!")
-                            .font(FAFTypography.h1)
+                        Text("No meals yet")
+                            .font(FAFTypography.h2)
                             .foregroundColor(.fafBlack)
 
-                        Text(user.location)
+                        Text("Start sharing your food adventures\nwith friends!")
                             .font(FAFTypography.body)
                             .foregroundColor(.fafGray)
-                    } else {
-                        Text("Welcome!")
-                            .font(FAFTypography.h1)
-                            .foregroundColor(.fafBlack)
+                            .multilineTextAlignment(.center)
+
+                        FAFButton(title: "Add Your First Meal", style: .accent, icon: .plus) {
+                            // TODO: Add meal action
+                        }
+                        .padding(.top, FAFSpacing.md)
+
+                        Spacer()
                     }
+                    .frame(maxWidth: .infinity)
                 }
-
-                Spacer()
-
-                Text("Your food adventures start here")
-                    .font(FAFTypography.body)
-                    .foregroundColor(.fafGray)
-
-                Spacer()
-
-                // Sign out button
-                FAFButton(title: "Sign Out", style: .secondary) {
-                    do {
-                        try authManager.signOut()
-                    } catch {
-                        print("Sign out error: \(error)")
-                    }
-                }
+                .padding(FAFSpacing.lg)
             }
-            .padding(FAFSpacing.lg)
             .background(Color.fafWhite)
-            .navigationTitle("Home")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(greeting)
+            .navigationBarTitleDisplayMode(.large)
         }
+    }
+
+    private var greeting: String {
+        if let user = userService.currentUser {
+            return "Hi, \(user.username)"
+        }
+        return "Home"
     }
 }
 

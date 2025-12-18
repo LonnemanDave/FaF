@@ -28,6 +28,7 @@ struct FAFTypography {
 
     static let bodyLarge = Font.system(size: 17, weight: .regular, design: fontFamily)
     static let body = Font.system(size: 15, weight: .regular, design: fontFamily)
+    static let bodyBold = Font.system(size: 15, weight: .semibold, design: fontFamily)
     static let bodySmall = Font.system(size: 13, weight: .regular, design: fontFamily)
 
     // MARK: - Label Styles

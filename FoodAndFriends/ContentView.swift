@@ -26,7 +26,7 @@ struct ContentView: View {
                 ProfileSetupView()
 
             case .signedIn:
-                HomeView()
+                MainTabView()
             }
         }
         .animation(.easeInOut, value: authManager.authState)
