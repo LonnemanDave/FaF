@@ -1,0 +1,104 @@
+import SwiftUI
+
+struct FeedView: View {
+    @ObservedObject var userService = UserService.shared
+    @ObservedObject var feedService = FeedService.shared
+    @ObservedObject var friendService = FriendService.shared
+
+    @State private var showFriends = false
+    @State private var hasLoaded = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: FAFSpacing.lg) {
+                    if !hasLoaded || feedService.isLoading {
+                        FeedLoadingView()
+                            .padding(.horizontal, FAFSpacing.lg)
+                    } else if feedService.feedActivities.isEmpty {
+                        EmptyFeedView(
+                            hasFriends: !friendService.friends.isEmpty,
+                            onAddFriends: {
+                                showFriends = true
+                            },
+                            onCreateRecipe: {
+                                // TODO: Navigate to create recipe
+                            }
+                        )
+                    } else {
+                        LazyVStack(spacing: FAFSpacing.md) {
+                            ForEach(feedService.feedActivities) { activity in
+                                ActivityCard(activity: activity)
+                            }
+                        }
+                        .padding(.horizontal, FAFSpacing.lg)
+                    }
+                }
+                .padding(.vertical, FAFSpacing.lg)
+            }
+            .background(Color.fafWhite)
+            .navigationTitle("Feed")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showFriends = true
+                    } label: {
+                        ZStack {
+                            FAFIcon(.friends, size: 20, color: .fafCoral)
+
+                            // Badge for pending requests
+                            if !friendService.pendingRequests.isEmpty {
+                                Circle()
+                                    .fill(Color.fafCoral)
+                                    .frame(width: 8, height: 8)
+                                    .offset(x: 8, y: -8)
+                            }
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showFriends) {
+                NavigationStack {
+                    FriendsView()
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                Button("Done") {
+                                    showFriends = false
+                                }
+                                .foregroundColor(.fafCoral)
+                            }
+                        }
+                }
+            }
+            .task {
+                if !hasLoaded {
+                    await loadFeed()
+                    hasLoaded = true
+                }
+            }
+            .refreshable {
+                await loadFeed()
+            }
+        }
+    }
+
+    private func loadFeed() async {
+        guard let user = userService.currentUser else { return }
+
+        // Load friends first if needed
+        if friendService.friends.isEmpty {
+            await friendService.fetchFriends(for: user.id ?? "")
+        }
+
+        // Load pending requests for badge
+        await friendService.fetchPendingRequests(for: user.id ?? "")
+
+        await feedService.fetchFeed(for: user)
+    }
+}
+
+#Preview {
+    FeedView()
+}

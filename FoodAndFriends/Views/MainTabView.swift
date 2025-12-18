@@ -5,7 +5,9 @@ struct MainTabView: View {
 
     enum Tab {
         case home
-        case friends
+        case recipes
+        case mealPlans
+        case feed
         case profile
     }
 
@@ -18,12 +20,26 @@ struct MainTabView: View {
                 }
                 .tag(Tab.home)
 
-            FriendsView()
+            RecipesView()
                 .tabItem {
-                    Image(systemName: selectedTab == .friends ? "person.2.fill" : "person.2")
-                    Text("Friends")
+                    Image(systemName: "fork.knife")
+                    Text("Recipes")
                 }
-                .tag(Tab.friends)
+                .tag(Tab.recipes)
+
+            MealPlansView()
+                .tabItem {
+                    Image(systemName: selectedTab == .mealPlans ? "calendar.circle.fill" : "calendar")
+                    Text("Meal Plans")
+                }
+                .tag(Tab.mealPlans)
+
+            FeedView()
+                .tabItem {
+                    Image(systemName: selectedTab == .feed ? "person.2.fill" : "person.2")
+                    Text("Feed")
+                }
+                .tag(Tab.feed)
 
             ProfileView()
                 .tabItem {

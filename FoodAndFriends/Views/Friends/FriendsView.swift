@@ -161,33 +161,50 @@ struct FriendRow: View {
     let friend: FAFUser
 
     var body: some View {
-        HStack(spacing: FAFSpacing.md) {
-            // Avatar
-            Circle()
-                .fill(Color.fafGrayXLight)
-                .frame(width: 50, height: 50)
-                .overlay(
-                    FAFIcon(.profile, size: 24, color: .fafGray)
-                )
+        NavigationLink(destination: UserProfileView(user: friend)) {
+            HStack(spacing: FAFSpacing.md) {
+                // Avatar
+                if let imageURL = friend.profileImageURL, let url = URL(string: imageURL) {
+                    AsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Circle()
+                            .fill(Color.fafGrayXLight)
+                            .overlay(
+                                FAFIcon(.profile, size: 24, color: .fafGray)
+                            )
+                    }
+                    .frame(width: 50, height: 50)
+                    .clipShape(Circle())
+                } else {
+                    Circle()
+                        .fill(Color.fafGrayXLight)
+                        .frame(width: 50, height: 50)
+                        .overlay(
+                            FAFIcon(.profile, size: 24, color: .fafGray)
+                        )
+                }
 
-            // Info
-            VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-                Text("@\(friend.username)")
-                    .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafBlack)
-                Text(friend.location)
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
+                // Info
+                VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
+                    Text("@\(friend.username)")
+                        .font(FAFTypography.bodyBold)
+                        .foregroundColor(.fafBlack)
+                    Text(friend.location)
+                        .font(FAFTypography.caption)
+                        .foregroundColor(.fafGray)
+                }
+
+                Spacer()
             }
-
-            Spacer()
-
-            FAFIcon(.forward, size: 16, color: .fafGray)
+            .padding(FAFSpacing.md)
+            .background(Color.fafOffWhite)
+            .cornerRadius(FAFRadius.md)
+            .padding(.horizontal, FAFSpacing.lg)
         }
-        .padding(FAFSpacing.md)
-        .background(Color.fafOffWhite)
-        .cornerRadius(FAFRadius.md)
-        .padding(.horizontal, FAFSpacing.lg)
+        .buttonStyle(.plain)
     }
 }
 
