@@ -60,6 +60,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.foodandfriends.app
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        DEVELOPMENT_TEAM: 47M8L4G38J
+        CODE_SIGN_STYLE: Automatic
     dependencies:
       - package: Firebase
         product: FirebaseAuth
@@ -67,6 +69,8 @@ targets:
         product: FirebaseCore
       - package: Firebase
         product: FirebaseFirestore
+      - package: Firebase
+        product: FirebaseStorage
       - package: GoogleSignIn
         product: GoogleSignIn
       - package: GoogleSignIn
