@@ -11,8 +11,6 @@ struct FeedLoadingView: View {
 }
 
 struct ActivityCardSkeleton: View {
-    @State private var isAnimating = false
-
     var body: some View {
         VStack(alignment: .leading, spacing: FAFSpacing.sm) {
             // Header skeleton
@@ -58,15 +56,7 @@ struct ActivityCardSkeleton: View {
         .padding(FAFSpacing.md)
         .background(Color.fafOffWhite)
         .cornerRadius(FAFRadius.md)
-        .opacity(isAnimating ? 0.6 : 1.0)
-        .animation(
-            .easeInOut(duration: 0.8)
-            .repeatForever(autoreverses: true),
-            value: isAnimating
-        )
-        .onAppear {
-            isAnimating = true
-        }
+        .redacted(reason: .placeholder)
     }
 }
 

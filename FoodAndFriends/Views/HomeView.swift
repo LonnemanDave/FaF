@@ -38,7 +38,7 @@ struct HomeView: View {
                 }
             }
             .background(Color.fafWhite)
-            .navigationTitle(greeting)
+            .navigationTitle("Home")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -58,23 +58,15 @@ struct HomeView: View {
                     }
                 }
             }
-            .task {
-                if !hasLoaded {
-                    await loadData()
-                    hasLoaded = true
-                }
+            .task(id: userService.currentUser?.id) {
+                guard !hasLoaded else { return }
+                await loadData()
+                hasLoaded = true
             }
             .refreshable {
                 await loadData()
             }
         }
-    }
-
-    private var greeting: String {
-        if let user = userService.currentUser {
-            return "Hi, \(user.username)"
-        }
-        return "Home"
     }
 
     private func loadData() async {

@@ -1,13 +1,29 @@
 import Foundation
 import FirebaseFirestore
 
+struct RecipeStep: Codable, Identifiable, Hashable {
+    var id: String = UUID().uuidString
+    var instruction: String
+    var ingredientIds: [String]
+    var orderIndex: Int
+
+    init(instruction: String, ingredientIds: [String] = [], orderIndex: Int = 0) {
+        self.id = UUID().uuidString
+        self.instruction = instruction
+        self.ingredientIds = ingredientIds
+        self.orderIndex = orderIndex
+    }
+}
+
 struct Recipe: Codable, Identifiable {
     @DocumentID var id: String?
     let authorId: String
     var title: String
     var description: String
     var ingredients: [Ingredient]
-    var instructions: [String]
+    var steps: [RecipeStep]
+    var instructions: [String]?  // Deprecated: kept for backward compatibility
+    var isPublic: Bool
     var imageURLs: [String]
     var servings: Int?
     var prepTimeMinutes: Int?
@@ -26,7 +42,9 @@ struct Recipe: Codable, Identifiable {
         title: String,
         description: String = "",
         ingredients: [Ingredient] = [],
-        instructions: [String] = [],
+        steps: [RecipeStep] = [],
+        instructions: [String]? = nil,
+        isPublic: Bool = false,
         imageURLs: [String] = [],
         servings: Int? = nil,
         prepTimeMinutes: Int? = nil,
@@ -42,7 +60,9 @@ struct Recipe: Codable, Identifiable {
         self.title = title
         self.description = description
         self.ingredients = ingredients
+        self.steps = steps
         self.instructions = instructions
+        self.isPublic = isPublic
         self.imageURLs = imageURLs
         self.servings = servings
         self.prepTimeMinutes = prepTimeMinutes
@@ -63,6 +83,14 @@ struct Recipe: Codable, Identifiable {
 
     var firstImageURL: String? {
         imageURLs.first
+    }
+
+    func ingredients(for step: RecipeStep) -> [Ingredient] {
+        ingredients.filter { step.ingredientIds.contains($0.id) }
+    }
+
+    var sortedSteps: [RecipeStep] {
+        steps.sorted { $0.orderIndex < $1.orderIndex }
     }
 }
 

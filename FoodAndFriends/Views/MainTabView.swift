@@ -15,36 +15,31 @@ struct MainTabView: View {
         TabView(selection: $selectedTab) {
             HomeView()
                 .tabItem {
-                    Image(systemName: selectedTab == .home ? "house.fill" : "house")
-                    Text("Home")
+                    Label("Home", systemImage: "house")
                 }
                 .tag(Tab.home)
 
             RecipesView()
                 .tabItem {
-                    Image(systemName: "fork.knife")
-                    Text("Recipes")
+                    Label("Recipes", systemImage: "fork.knife")
                 }
                 .tag(Tab.recipes)
 
             MealPlansView()
                 .tabItem {
-                    Image(systemName: selectedTab == .mealPlans ? "calendar.circle.fill" : "calendar")
-                    Text("Meal Plans")
+                    Label("Meal Plans", systemImage: "calendar")
                 }
                 .tag(Tab.mealPlans)
 
             FeedView()
                 .tabItem {
-                    Image(systemName: selectedTab == .feed ? "person.2.fill" : "person.2")
-                    Text("Feed")
+                    Label("Feed", systemImage: "person.2")
                 }
                 .tag(Tab.feed)
 
             ProfileView()
                 .tabItem {
-                    Image(systemName: selectedTab == .profile ? "person.fill" : "person")
-                    Text("Profile")
+                    Label("Profile", systemImage: "person")
                 }
                 .tag(Tab.profile)
         }
