@@ -21,9 +21,13 @@ class FeedService: ObservableObject {
 
     private let db = Firestore.firestore()
     private let activitiesCollection = "activities"
+    private let usersCollection = "users"
 
     @Published var feedActivities: [Activity] = []
     @Published var isLoading = false
+
+    // Cache of user profile data for enriching activities
+    private var userCache: [String: FAFUser] = [:]
 
     private init() {}
 
@@ -44,6 +48,9 @@ class FeedService: ObservableObject {
         }
 
         do {
+            // Fetch fresh user data for enriching activities
+            await fetchUsers(ids: allUserIds)
+
             // Batch into groups of 30 (Firestore whereIn limit)
             let batches = allUserIds.chunked(into: 30)
             var allActivities: [Activity] = []
@@ -61,9 +68,19 @@ class FeedService: ObservableObject {
                 allActivities.append(contentsOf: activities)
             }
 
+            // Enrich activities with fresh user data
+            let enrichedActivities = allActivities.map { activity -> Activity in
+                var enriched = activity
+                if let cachedUser = userCache[activity.authorId] {
+                    enriched.authorUsername = cachedUser.username
+                    enriched.authorProfileImageURL = cachedUser.profileImageURL
+                }
+                return enriched
+            }
+
             // Sort merged results and limit
             feedActivities = Array(
-                allActivities
+                enrichedActivities
                     .sorted { $0.createdAt > $1.createdAt }
                     .prefix(limit)
             )
@@ -73,8 +90,38 @@ class FeedService: ObservableObject {
         }
     }
 
+    private func fetchUsers(ids: [String]) async {
+        // Only fetch users we don't have cached
+        let uncachedIds = ids.filter { userCache[$0] == nil }
+        guard !uncachedIds.isEmpty else { return }
+
+        do {
+            let batches = uncachedIds.chunked(into: 30)
+            for batch in batches {
+                let snapshot = try await db.collection(usersCollection)
+                    .whereField(FieldPath.documentID(), in: batch)
+                    .getDocuments()
+
+                for doc in snapshot.documents {
+                    if let user = try? doc.data(as: FAFUser.self) {
+                        userCache[doc.documentID] = user
+                    }
+                }
+            }
+        } catch {
+            print("Error fetching users for feed: \(error)")
+        }
+    }
+
     func refreshFeed(for user: FAFUser) async {
+        // Clear cache on refresh to get fresh user data
+        userCache.removeAll()
         await fetchFeed(for: user)
+    }
+
+    func clearCache() {
+        feedActivities.removeAll()
+        userCache.removeAll()
     }
 
     // MARK: - Activity Creation Helpers

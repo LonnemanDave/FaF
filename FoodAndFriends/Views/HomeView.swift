@@ -7,6 +7,8 @@ struct HomeView: View {
     @ObservedObject var feedService = FeedService.shared
 
     @State private var hasLoaded = false
+    @State private var selectedRecipe: Recipe?
+    @State private var selectedMealPlan: MealPlan?
 
     var body: some View {
         NavigationStack {
@@ -28,7 +30,11 @@ struct HomeView: View {
                             QuickActionsSection()
 
                             // Recent Activity Preview
-                            RecentActivitySection(activities: Array(feedService.feedActivities.prefix(3)))
+                            RecentActivitySection(
+                                activities: Array(feedService.feedActivities.prefix(3)),
+                                onSelectRecipe: { selectedRecipe = $0 },
+                                onSelectMealPlan: { selectedMealPlan = $0 }
+                            )
 
                             // My Recipes
                             MyRecipesSection(recipes: recipeService.userRecipes)
@@ -40,6 +46,13 @@ struct HomeView: View {
             .background(Color.fafWhite)
             .navigationTitle("Home")
             .navigationBarTitleDisplayMode(.large)
+            .navigationDestination(item: $selectedRecipe) { recipe in
+                RecipeDetailView(recipe: recipe)
+            }
+            .navigationDestination(item: $selectedMealPlan) { mealPlan in
+                // TODO: MealPlanDetailView when implemented
+                Text("Meal Plan: \(mealPlan.name)")
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -234,6 +247,8 @@ struct DashboardActionButton: View {
 
 struct RecentActivitySection: View {
     let activities: [Activity]
+    var onSelectRecipe: ((Recipe) -> Void)?
+    var onSelectMealPlan: ((MealPlan) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: FAFSpacing.md) {
@@ -256,7 +271,11 @@ struct RecentActivitySection: View {
             } else {
                 VStack(spacing: FAFSpacing.sm) {
                     ForEach(activities) { activity in
-                        CompactActivityCard(activity: activity)
+                        CompactActivityCard(
+                            activity: activity,
+                            onSelectRecipe: onSelectRecipe,
+                            onSelectMealPlan: onSelectMealPlan
+                        )
                     }
                 }
             }
@@ -285,37 +304,96 @@ struct EmptyActivityPreview: View {
 
 struct CompactActivityCard: View {
     let activity: Activity
+    var onSelectRecipe: ((Recipe) -> Void)?
+    var onSelectMealPlan: ((MealPlan) -> Void)?
+
+    @State private var isLoading = false
 
     var body: some View {
-        HStack(spacing: FAFSpacing.sm) {
-            // Author avatar placeholder
-            Circle()
-                .fill(Color.fafGrayXLight)
-                .frame(width: 36, height: 36)
-                .overlay(
-                    FAFIcon(.profile, size: 16, color: .fafGray)
-                )
+        Button {
+            Task { await handleTap() }
+        } label: {
+            HStack(spacing: FAFSpacing.sm) {
+                // Author avatar
+                if let imageURL = activity.authorProfileImageURL,
+                   let url = URL(string: imageURL) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        case .failure, .empty:
+                            placeholderAvatar
+                        @unknown default:
+                            placeholderAvatar
+                        }
+                    }
+                    .frame(width: 36, height: 36)
+                    .clipShape(Circle())
+                } else {
+                    placeholderAvatar
+                }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("@\(activity.authorUsername ?? "unknown")")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("@\(activity.authorUsername ?? "unknown")")
+                        .font(FAFTypography.caption)
+                        .foregroundColor(.fafGray)
 
-                Text(activity.contentTitle ?? "Shared something")
-                    .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafBlack)
-                    .lineLimit(1)
+                    Text(activity.contentTitle ?? "Shared something")
+                        .font(FAFTypography.bodyBold)
+                        .foregroundColor(.fafBlack)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Text(activity.createdAt.timeAgoDisplay())
+                        .font(FAFTypography.caption)
+                        .foregroundColor(.fafGrayLight)
+                }
             }
-
-            Spacer()
-
-            Text(activity.createdAt.timeAgoDisplay())
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGrayLight)
+            .padding(FAFSpacing.sm)
+            .background(Color.fafOffWhite)
+            .cornerRadius(FAFRadius.sm)
         }
-        .padding(FAFSpacing.sm)
-        .background(Color.fafOffWhite)
-        .cornerRadius(FAFRadius.sm)
+        .buttonStyle(.plain)
+    }
+
+    private var placeholderAvatar: some View {
+        Circle()
+            .fill(Color.fafGrayXLight)
+            .frame(width: 36, height: 36)
+            .overlay(
+                FAFIcon(.profile, size: 16, color: .fafGray)
+            )
+    }
+
+    private func handleTap() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        if activity.isRecipeActivity, let recipeId = activity.recipeId {
+            do {
+                if let recipe = try await RecipeService.shared.fetchRecipe(id: recipeId) {
+                    onSelectRecipe?(recipe)
+                }
+            } catch {
+                print("Error fetching recipe: \(error)")
+            }
+        } else if activity.isMealPlanActivity, let mealPlanId = activity.mealPlanId {
+            do {
+                if let mealPlan = try await MealPlanService.shared.fetchMealPlan(id: mealPlanId) {
+                    onSelectMealPlan?(mealPlan)
+                }
+            } catch {
+                print("Error fetching meal plan: \(error)")
+            }
+        }
     }
 }
 

@@ -64,7 +64,9 @@ struct RecipesView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showCreateRecipe) {
+            .sheet(isPresented: $showCreateRecipe, onDismiss: {
+                Task { await loadRecipes() }
+            }) {
                 CreateRecipeView()
             }
             .task {
@@ -75,6 +77,14 @@ struct RecipesView: View {
             }
             .refreshable {
                 await loadRecipes()
+            }
+            .onChange(of: recipeService.needsRefresh) { _, needsRefresh in
+                if needsRefresh {
+                    Task {
+                        await loadRecipes()
+                        recipeService.needsRefresh = false
+                    }
+                }
             }
         }
     }

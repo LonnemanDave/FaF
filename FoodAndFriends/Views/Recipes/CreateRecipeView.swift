@@ -11,6 +11,10 @@ struct CreateRecipeView: View {
     var onDelete: (() -> Void)?
     var isEditing: Bool { recipeToEdit != nil }
 
+    // Variation mode
+    var baseRecipeForVariation: Recipe?
+    var isVariationMode: Bool { baseRecipeForVariation != nil }
+
     // Basic Info
     @State private var title = ""
     @State private var description = ""
@@ -25,27 +29,47 @@ struct CreateRecipeView: View {
     @State private var newIngredientName = ""
     @State private var newIngredientQuantity = ""
     @State private var newIngredientUnit = ""
+    @State private var editingIngredientId: String?
 
     // Steps
     @State private var steps: [RecipeStep] = []
+
+    // Variation
+    @State private var variationNotes = ""
 
     // UI State
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var showDeleteConfirmation = false
+    @State private var showDuplicatePrompt = false
+    @State private var duplicateRecipe: Recipe?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: FAFSpacing.xl) {
-                    basicInfoSection
-                    Divider()
+                    // Variation header
+                    if effectiveVariationMode, let baseRecipe = effectiveBaseRecipe {
+                        variationHeader(for: baseRecipe)
+                    }
+
+                    if !effectiveVariationMode {
+                        basicInfoSection
+                        Divider()
+                    }
+
                     ingredientsSection
                     Divider()
                     stepsSection
-                    Divider()
-                    visibilitySection
+
+                    if effectiveVariationMode {
+                        Divider()
+                        notesSection
+                    } else {
+                        Divider()
+                        visibilitySection
+                    }
 
                     if isEditing {
                         Divider()
@@ -53,7 +77,7 @@ struct CreateRecipeView: View {
                     }
 
                     FAFButton(
-                        title: "Save Recipe",
+                        title: effectiveVariationMode ? "Save Variation" : "Save Recipe",
                         style: .accent,
                         isLoading: isLoading
                     ) {
@@ -65,7 +89,7 @@ struct CreateRecipeView: View {
                 .padding(FAFSpacing.lg)
             }
             .background(Color.fafWhite)
-            .navigationTitle(isEditing ? "Edit Recipe" : "New Recipe")
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -78,7 +102,7 @@ struct CreateRecipeView: View {
             } message: {
                 Text(errorMessage)
             }
-            .confirmationDialog("Delete Recipe", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
+            .alert("Delete Recipe", isPresented: $showDeleteConfirmation) {
                 Button("Delete", role: .destructive) {
                     Task { await deleteRecipe() }
                 }
@@ -86,11 +110,36 @@ struct CreateRecipeView: View {
             } message: {
                 Text("Are you sure you want to delete this recipe? This cannot be undone.")
             }
+            .confirmationDialog("Recipe Exists", isPresented: $showDuplicatePrompt, titleVisibility: .visible) {
+                Button("Add My Variation") {
+                    if let existingRecipe = duplicateRecipe {
+                        // Switch to variation mode
+                        switchToVariationMode(for: existingRecipe)
+                    }
+                }
+                Button("Change Title", role: .cancel) {}
+            } message: {
+                if let existingRecipe = duplicateRecipe {
+                    Text("\"\(existingRecipe.title)\" already exists. Would you like to add your variation instead?")
+                }
+            }
             .onAppear {
                 if let recipe = recipeToEdit {
                     populateFields(from: recipe)
+                } else if let baseRecipe = baseRecipeForVariation {
+                    populateFieldsForVariation(from: baseRecipe)
                 }
             }
+        }
+    }
+
+    private var navigationTitle: String {
+        if effectiveVariationMode {
+            return "Your Variation"
+        } else if isEditing {
+            return "Edit Recipe"
+        } else {
+            return "New Recipe"
         }
     }
 
@@ -104,6 +153,78 @@ struct CreateRecipeView: View {
         isPublic = recipe.isPublic
         ingredients = recipe.ingredients
         steps = recipe.sortedSteps
+    }
+
+    private func populateFieldsForVariation(from recipe: Recipe) {
+        // Copy the base recipe's ingredients and steps as starting point
+        ingredients = recipe.ingredients
+        steps = recipe.sortedSteps
+    }
+
+    @State private var internalVariationMode = false
+    @State private var internalBaseRecipe: Recipe?
+
+    private var effectiveBaseRecipe: Recipe? {
+        baseRecipeForVariation ?? internalBaseRecipe
+    }
+
+    private var effectiveVariationMode: Bool {
+        isVariationMode || internalVariationMode
+    }
+
+    private func switchToVariationMode(for recipe: Recipe) {
+        internalBaseRecipe = recipe
+        internalVariationMode = true
+        populateFieldsForVariation(from: recipe)
+    }
+
+    // MARK: - Variation Header
+
+    private func variationHeader(for recipe: Recipe) -> some View {
+        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
+            HStack {
+                Image(systemName: "fork.knife")
+                    .foregroundColor(.fafCoral)
+                Text("Your Variation of:")
+                    .font(FAFTypography.caption)
+                    .foregroundColor(.fafGray)
+            }
+            Text(recipe.title)
+                .font(FAFTypography.h2)
+                .foregroundColor(.fafBlack)
+            if let author = recipe.authorUsername {
+                Text("Original by @\(author)")
+                    .font(FAFTypography.caption)
+                    .foregroundColor(.fafGray)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(FAFSpacing.md)
+        .background(Color.fafCoral.opacity(0.1))
+        .cornerRadius(FAFRadius.md)
+    }
+
+    // MARK: - Notes Section
+
+    private var notesSection: some View {
+        VStack(alignment: .leading, spacing: FAFSpacing.md) {
+            SectionHeader(title: "Chef's Notes", systemIcon: "note.text")
+
+            Text("Describe what makes your variation different")
+                .font(FAFTypography.caption)
+                .foregroundColor(.fafGray)
+
+            TextEditor(text: $variationNotes)
+                .font(FAFTypography.body)
+                .frame(minHeight: 100)
+                .padding(FAFSpacing.sm)
+                .background(Color.fafOffWhite)
+                .cornerRadius(FAFRadius.md)
+                .overlay(
+                    RoundedRectangle(cornerRadius: FAFRadius.md)
+                        .stroke(Color.fafGrayXLight, lineWidth: 1)
+                )
+        }
     }
 
     // MARK: - Basic Info Section
@@ -145,6 +266,10 @@ struct CreateRecipeView: View {
 
     // MARK: - Ingredients Section
 
+    private var isEditingIngredient: Bool {
+        editingIngredientId != nil
+    }
+
     private var ingredientsSection: some View {
         VStack(alignment: .leading, spacing: FAFSpacing.md) {
             SectionHeader(title: "Ingredients", systemIcon: "list.bullet")
@@ -154,7 +279,7 @@ struct CreateRecipeView: View {
                     .font(FAFTypography.body)
                     .frame(width: 50)
                     .padding(FAFSpacing.sm)
-                    .background(Color.fafOffWhite)
+                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafOffWhite)
                     .cornerRadius(FAFRadius.sm)
                     .keyboardType(.decimalPad)
 
@@ -162,19 +287,33 @@ struct CreateRecipeView: View {
                     .font(FAFTypography.body)
                     .frame(width: 60)
                     .padding(FAFSpacing.sm)
-                    .background(Color.fafOffWhite)
+                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafOffWhite)
                     .cornerRadius(FAFRadius.sm)
 
                 TextField("Ingredient", text: $newIngredientName)
                     .font(FAFTypography.body)
                     .padding(FAFSpacing.sm)
-                    .background(Color.fafOffWhite)
+                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafOffWhite)
                     .cornerRadius(FAFRadius.sm)
 
+                if isEditingIngredient {
+                    Button {
+                        cancelEditingIngredient()
+                    } label: {
+                        FAFIcon(.close, size: 20, color: .fafGray)
+                    }
+                }
+
                 Button {
-                    addIngredient()
+                    if isEditingIngredient {
+                        saveEditedIngredient()
+                    } else {
+                        addIngredient()
+                    }
                 } label: {
-                    FAFIcon(.plus, size: 20, color: newIngredientName.isEmpty || newIngredientQuantity.isEmpty ? .fafGrayLight : .fafCoral)
+                    Image(systemName: isEditingIngredient ? "checkmark" : "plus")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(newIngredientName.isEmpty || newIngredientQuantity.isEmpty ? .fafGrayLight : .fafCoral)
                 }
                 .disabled(newIngredientName.isEmpty || newIngredientQuantity.isEmpty)
             }
@@ -182,21 +321,30 @@ struct CreateRecipeView: View {
             if !ingredients.isEmpty {
                 VStack(alignment: .leading, spacing: FAFSpacing.sm) {
                     ForEach(ingredients) { ingredient in
-                        HStack {
-                            Circle()
-                                .fill(Color.fafCoral)
-                                .frame(width: 6, height: 6)
+                        Button {
+                            startEditingIngredient(ingredient)
+                        } label: {
+                            HStack {
+                                Circle()
+                                    .fill(editingIngredientId == ingredient.id ? Color.fafSage : Color.fafCoral)
+                                    .frame(width: 6, height: 6)
 
-                            Text(ingredient.displayString)
-                                .font(FAFTypography.body)
-                                .foregroundColor(.fafBlack)
+                                Text(ingredient.displayString)
+                                    .font(FAFTypography.body)
+                                    .foregroundColor(editingIngredientId == ingredient.id ? .fafGray : .fafBlack)
 
-                            Spacer()
+                                Spacer()
 
-                            Button {
-                                removeIngredient(ingredient)
-                            } label: {
-                                FAFIcon(.close, size: 16, color: .fafGray)
+                                if editingIngredientId == ingredient.id {
+                                    Text("editing")
+                                        .font(FAFTypography.caption)
+                                        .foregroundColor(.fafSage)
+                                } else {
+                                    FAFIcon(.close, size: 16, color: .fafGray)
+                                        .onTapGesture {
+                                            removeIngredient(ingredient)
+                                        }
+                                }
                             }
                         }
                         .padding(.vertical, FAFSpacing.xxs)
@@ -292,7 +440,13 @@ struct CreateRecipeView: View {
     // MARK: - Helper Methods
 
     private var isFormValid: Bool {
-        !title.isEmpty && !steps.isEmpty && steps.allSatisfy { !$0.instruction.isEmpty }
+        if effectiveVariationMode {
+            // Variation mode: just need steps
+            return !steps.isEmpty && steps.allSatisfy { !$0.instruction.isEmpty }
+        } else {
+            // Normal mode: need title and steps
+            return !title.isEmpty && !steps.isEmpty && steps.allSatisfy { !$0.instruction.isEmpty }
+        }
     }
 
     private func addIngredient() {
@@ -312,6 +466,32 @@ struct CreateRecipeView: View {
         for i in steps.indices {
             steps[i].ingredientIds.removeAll { $0 == ingredient.id }
         }
+    }
+
+    private func startEditingIngredient(_ ingredient: Ingredient) {
+        editingIngredientId = ingredient.id
+        newIngredientName = ingredient.name
+        newIngredientQuantity = ingredient.quantity
+        newIngredientUnit = ingredient.unit ?? ""
+    }
+
+    private func saveEditedIngredient() {
+        guard let editingId = editingIngredientId,
+              let index = ingredients.firstIndex(where: { $0.id == editingId }) else { return }
+
+        // Keep the same ID so step references remain valid
+        ingredients[index].name = newIngredientName
+        ingredients[index].quantity = newIngredientQuantity
+        ingredients[index].unit = newIngredientUnit.isEmpty ? nil : newIngredientUnit
+
+        cancelEditingIngredient()
+    }
+
+    private func cancelEditingIngredient() {
+        editingIngredientId = nil
+        newIngredientName = ""
+        newIngredientQuantity = ""
+        newIngredientUnit = ""
     }
 
     private func addStep() {
@@ -336,11 +516,27 @@ struct CreateRecipeView: View {
         isLoading = true
         defer { isLoading = false }
 
-        let parsedTags = tags.split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-            .filter { !$0.isEmpty }
-
         do {
+            // Handle variation mode
+            if effectiveVariationMode, let baseRecipe = effectiveBaseRecipe, let recipeId = baseRecipe.id {
+                let variation = RecipeVariation(
+                    recipeId: recipeId,
+                    authorId: user.id ?? "",
+                    ingredients: ingredients,
+                    steps: steps,
+                    notes: variationNotes,
+                    authorUsername: user.username,
+                    authorProfileImageURL: user.profileImageURL
+                )
+                try await recipeService.createVariation(for: recipeId, variation: variation, author: user)
+                dismiss()
+                return
+            }
+
+            let parsedTags = tags.split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+                .filter { !$0.isEmpty }
+
             if isEditing, let existingRecipe = recipeToEdit {
                 // Update existing recipe
                 var updatedRecipe = existingRecipe
@@ -356,6 +552,13 @@ struct CreateRecipeView: View {
 
                 try await recipeService.updateRecipe(updatedRecipe)
             } else {
+                // Check for duplicate before creating
+                if let existingRecipe = try await recipeService.recipeExists(title: title) {
+                    duplicateRecipe = existingRecipe
+                    showDuplicatePrompt = true
+                    return
+                }
+
                 // Create new recipe
                 let recipe = Recipe(
                     authorId: user.id ?? "",

@@ -1,7 +1,14 @@
 import Foundation
 import FirebaseFirestore
 
-struct MealPlan: Codable, Identifiable {
+struct MealPlan: Codable, Identifiable, Hashable {
+    static func == (lhs: MealPlan, rhs: MealPlan) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
     @DocumentID var id: String?
     let authorId: String
     var name: String

@@ -5,6 +5,8 @@ enum RecipeServiceError: LocalizedError {
     case recipeNotFound
     case unauthorized
     case invalidData
+    case duplicateRecipe(existingRecipe: Recipe)
+    case variationExists
     case firestoreError(Error)
 
     var errorDescription: String? {
@@ -15,6 +17,10 @@ enum RecipeServiceError: LocalizedError {
             return "You don't have permission to modify this recipe"
         case .invalidData:
             return "Invalid recipe data"
+        case .duplicateRecipe:
+            return "A recipe with this name already exists"
+        case .variationExists:
+            return "You already have a variation for this recipe"
         case .firestoreError(let error):
             return error.localizedDescription
         }
@@ -28,11 +34,13 @@ class RecipeService: ObservableObject {
     private let db = Firestore.firestore()
     private let recipesCollection = "recipes"
     private let activitiesCollection = "activities"
+    private let variationsSubcollection = "variations"
 
     @Published var userRecipes: [Recipe] = []
     @Published var friendsRecipes: [Recipe] = []
     @Published var globalRecipes: [Recipe] = []
     @Published var isLoading = false
+    @Published var needsRefresh = false
 
     private init() {}
 
@@ -203,18 +211,293 @@ class RecipeService: ObservableObject {
             throw RecipeServiceError.recipeNotFound
         }
 
-        // Delete the recipe
-        try await db.collection(recipesCollection).document(recipeId).delete()
-        userRecipes.removeAll { $0.id == recipeId }
-
-        // Delete associated feed activities
-        let activitiesSnapshot = try await db.collection(activitiesCollection)
-            .whereField("recipeId", isEqualTo: recipeId)
+        // Check for variations
+        let variationsSnapshot = try await db.collection(recipesCollection)
+            .document(recipeId)
+            .collection(variationsSubcollection)
+            .order(by: "likeCount", descending: true)
+            .limit(to: 1)
             .getDocuments()
 
-        for doc in activitiesSnapshot.documents {
-            try await doc.reference.delete()
+        if let topVariationDoc = variationsSnapshot.documents.first,
+           let topVariation = try? topVariationDoc.data(as: RecipeVariation.self) {
+            // Promote the top variation to become the new base recipe
+            var updatedRecipe = recipe
+            updatedRecipe.authorId = topVariation.authorId
+            updatedRecipe.authorUsername = topVariation.authorUsername
+            updatedRecipe.authorProfileImageURL = topVariation.authorProfileImageURL
+            updatedRecipe.ingredients = topVariation.ingredients
+            updatedRecipe.steps = topVariation.steps
+            updatedRecipe.updatedAt = Date()
+
+            // Use batch write to atomically update recipe and delete variation
+            // This ensures security rules see consistent data
+            let batch = db.batch()
+
+            let recipeRef = db.collection(recipesCollection).document(recipeId)
+            try batch.setData(from: updatedRecipe, forDocument: recipeRef, merge: true)
+
+            batch.deleteDocument(topVariationDoc.reference)
+
+            try await batch.commit()
+
+            // Delete activities for this recipe:
+            // 1. Original owner's activity (User 1 created it)
+            // 2. Promoted user's variation activity (since variation no longer exists)
+            let activitiesSnapshot = try await db.collection(activitiesCollection)
+                .whereField("recipeId", isEqualTo: recipeId)
+                .getDocuments()
+
+            for doc in activitiesSnapshot.documents {
+                if let activity = try? doc.data(as: Activity.self) {
+                    // Delete old owner's activities
+                    if activity.authorId == recipe.authorId {
+                        try await doc.reference.delete()
+                    }
+                    // Delete promoted user's variation activity (they'll get a new "owner" activity)
+                    else if activity.authorId == topVariation.authorId {
+                        try await doc.reference.delete()
+                    }
+                }
+            }
+
+            // Create single activity for the new owner
+            let activity = Activity(
+                type: .newRecipe,
+                authorId: topVariation.authorId,
+                createdAt: Date(),
+                recipeId: recipeId,
+                authorUsername: topVariation.authorUsername,
+                authorProfileImageURL: topVariation.authorProfileImageURL,
+                contentTitle: recipe.title,
+                contentDescription: recipe.description,
+                contentImageURL: recipe.firstImageURL
+            )
+            try db.collection(activitiesCollection).addDocument(from: activity)
+        } else {
+            // No variations - delete the recipe entirely
+            try await db.collection(recipesCollection).document(recipeId).delete()
+
+            // Delete associated feed activities
+            let activitiesSnapshot = try await db.collection(activitiesCollection)
+                .whereField("recipeId", isEqualTo: recipeId)
+                .getDocuments()
+
+            for doc in activitiesSnapshot.documents {
+                try await doc.reference.delete()
+            }
         }
+
+        userRecipes.removeAll { $0.id == recipeId }
+
+        // Clear caches so data refreshes with new ownership
+        friendsRecipes.removeAll()
+        globalRecipes.removeAll()
+
+        // Signal that views should refresh
+        needsRefresh = true
+
+        // Clear feed cache so activities refresh
+        FeedService.shared.clearCache()
+    }
+
+    // MARK: - Recipe Existence Check
+
+    func recipeExists(title: String) async throws -> Recipe? {
+        let normalizedTitle = title.lowercased().trimmingCharacters(in: .whitespaces)
+
+        let snapshot = try await db.collection(recipesCollection)
+            .getDocuments()
+
+        // Case-insensitive title match
+        let matchingRecipe = snapshot.documents.compactMap { doc -> Recipe? in
+            guard let recipe = try? doc.data(as: Recipe.self) else { return nil }
+            return recipe.title.lowercased().trimmingCharacters(in: .whitespaces) == normalizedTitle ? recipe : nil
+        }.first
+
+        return matchingRecipe
+    }
+
+    // MARK: - Variations
+
+    func createVariation(for recipeId: String, variation: RecipeVariation, author: FAFUser) async throws {
+        guard let authorId = author.id else {
+            throw RecipeServiceError.invalidData
+        }
+
+        // Check if user already has a variation for this recipe
+        let existingVariation = try await db.collection(recipesCollection)
+            .document(recipeId)
+            .collection(variationsSubcollection)
+            .whereField("authorId", isEqualTo: authorId)
+            .getDocuments()
+
+        if !existingVariation.documents.isEmpty {
+            throw RecipeServiceError.variationExists
+        }
+
+        var newVariation = variation
+        newVariation.authorUsername = author.username
+        newVariation.authorProfileImageURL = author.profileImageURL
+
+        try db.collection(recipesCollection)
+            .document(recipeId)
+            .collection(variationsSubcollection)
+            .addDocument(from: newVariation)
+
+        // Create activity for feed
+        if let recipe = try await fetchRecipe(id: recipeId) {
+            let activity = Activity(
+                type: .newRecipe,
+                authorId: authorId,
+                createdAt: Date(),
+                recipeId: recipeId,
+                authorUsername: author.username,
+                authorProfileImageURL: author.profileImageURL,
+                contentTitle: "\(recipe.title) (variation)",
+                contentDescription: newVariation.notes,
+                contentImageURL: recipe.firstImageURL
+            )
+            try db.collection(activitiesCollection).addDocument(from: activity)
+        }
+    }
+
+    func fetchVariations(for recipeId: String, friendIds: [String] = [], limit: Int = 20) async throws -> [RecipeVariation] {
+        let snapshot = try await db.collection(recipesCollection)
+            .document(recipeId)
+            .collection(variationsSubcollection)
+            .order(by: "likeCount", descending: true)
+            .limit(to: limit)
+            .getDocuments()
+
+        var variations = snapshot.documents.compactMap { doc in
+            try? doc.data(as: RecipeVariation.self)
+        }
+
+        // Sort: friends first, then by likeCount, then by date
+        variations.sort { v1, v2 in
+            let v1IsFriend = friendIds.contains(v1.authorId)
+            let v2IsFriend = friendIds.contains(v2.authorId)
+
+            if v1IsFriend != v2IsFriend {
+                return v1IsFriend
+            }
+            if v1.likeCount != v2.likeCount {
+                return v1.likeCount > v2.likeCount
+            }
+            return v1.createdAt > v2.createdAt
+        }
+
+        return variations
+    }
+
+    func updateVariation(_ variation: RecipeVariation, recipeId: String) async throws {
+        guard let variationId = variation.id else {
+            throw RecipeServiceError.recipeNotFound
+        }
+
+        var updatedVariation = variation
+        updatedVariation.updatedAt = Date()
+
+        try db.collection(recipesCollection)
+            .document(recipeId)
+            .collection(variationsSubcollection)
+            .document(variationId)
+            .setData(from: updatedVariation, merge: true)
+    }
+
+    func deleteVariation(_ variation: RecipeVariation, recipeId: String) async throws {
+        guard let variationId = variation.id else {
+            throw RecipeServiceError.recipeNotFound
+        }
+
+        try await db.collection(recipesCollection)
+            .document(recipeId)
+            .collection(variationsSubcollection)
+            .document(variationId)
+            .delete()
+    }
+
+    func likeVariation(_ variation: RecipeVariation, recipeId: String) async throws {
+        guard let variationId = variation.id else {
+            throw RecipeServiceError.recipeNotFound
+        }
+
+        try await db.collection(recipesCollection)
+            .document(recipeId)
+            .collection(variationsSubcollection)
+            .document(variationId)
+            .updateData(["likeCount": FieldValue.increment(Int64(1))])
+    }
+
+    func promoteVariation(_ variation: RecipeVariation, recipe: Recipe, currentUser: FAFUser) async throws {
+        guard let recipeId = recipe.id,
+              let variationId = variation.id,
+              let currentUserId = currentUser.id else {
+            throw RecipeServiceError.invalidData
+        }
+
+        // Only the recipe owner can promote
+        guard recipe.authorId == currentUserId else {
+            throw RecipeServiceError.unauthorized
+        }
+
+        // 1. Create a variation from the current base recipe (owned by current owner)
+        let ownerVariation = RecipeVariation(
+            recipeId: recipeId,
+            authorId: recipe.authorId,
+            ingredients: recipe.ingredients,
+            steps: recipe.steps,
+            notes: "Original version",
+            likeCount: 0,
+            authorUsername: recipe.authorUsername,
+            authorProfileImageURL: recipe.authorProfileImageURL
+        )
+
+        // 2. Update the base recipe with the variation's content and new owner
+        var updatedRecipe = recipe
+        updatedRecipe.authorId = variation.authorId
+        updatedRecipe.authorUsername = variation.authorUsername
+        updatedRecipe.authorProfileImageURL = variation.authorProfileImageURL
+        updatedRecipe.ingredients = variation.ingredients
+        updatedRecipe.steps = variation.steps
+        updatedRecipe.updatedAt = Date()
+
+        // Use batch write for atomic operations
+        let batch = db.batch()
+
+        // Add owner's current version as a variation
+        let ownerVariationRef = db.collection(recipesCollection)
+            .document(recipeId)
+            .collection(variationsSubcollection)
+            .document()
+        try batch.setData(from: ownerVariation, forDocument: ownerVariationRef)
+
+        // Update recipe with new owner
+        let recipeRef = db.collection(recipesCollection).document(recipeId)
+        try batch.setData(from: updatedRecipe, forDocument: recipeRef, merge: true)
+
+        // Delete the promoted variation
+        let promotedVariationRef = db.collection(recipesCollection)
+            .document(recipeId)
+            .collection(variationsSubcollection)
+            .document(variationId)
+        batch.deleteDocument(promotedVariationRef)
+
+        try await batch.commit()
+
+        // 4. Create activity
+        let activity = Activity(
+            type: .newRecipe,
+            authorId: variation.authorId,
+            createdAt: Date(),
+            recipeId: recipeId,
+            authorUsername: variation.authorUsername,
+            authorProfileImageURL: variation.authorProfileImageURL,
+            contentTitle: "\(recipe.title) - promoted to official",
+            contentDescription: "Variation was promoted to official recipe"
+        )
+        try db.collection(activitiesCollection).addDocument(from: activity)
     }
 
     // MARK: - Seed Data (Debug)

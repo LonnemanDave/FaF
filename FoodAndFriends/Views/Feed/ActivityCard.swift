@@ -2,32 +2,72 @@ import SwiftUI
 
 struct ActivityCard: View {
     let activity: Activity
+    var onSelectRecipe: ((Recipe) -> Void)?
+    var onSelectMealPlan: ((MealPlan) -> Void)?
+
+    @State private var isLoading = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-            // Author Header
-            ActivityAuthorHeader(activity: activity)
+        Button {
+            Task { await handleTap() }
+        } label: {
+            VStack(alignment: .leading, spacing: FAFSpacing.sm) {
+                // Author Header
+                ActivityAuthorHeader(activity: activity)
 
-            // Content based on activity type
-            switch activity.type {
-            case .newRecipe:
-                RecipePreviewCard(activity: activity)
-            case .newMealPlan:
-                MealPlanPreviewCard(activity: activity)
-            case .recipeComment, .mealPlanComment:
-                CommentActivityCard(activity: activity)
-            case .recipeLike, .mealPlanLike:
-                LikeActivityCard(activity: activity)
+                // Content based on activity type
+                ZStack {
+                    switch activity.type {
+                    case .newRecipe:
+                        RecipePreviewCard(activity: activity)
+                    case .newMealPlan:
+                        MealPlanPreviewCard(activity: activity)
+                    case .recipeComment, .mealPlanComment:
+                        CommentActivityCard(activity: activity)
+                    case .recipeLike, .mealPlanLike:
+                        LikeActivityCard(activity: activity)
+                    }
+
+                    if isLoading {
+                        Color.black.opacity(0.1)
+                            .cornerRadius(FAFRadius.sm)
+                        ProgressView()
+                    }
+                }
+
+                // Timestamp
+                Text(activity.createdAt.timeAgoDisplay())
+                    .font(FAFTypography.caption)
+                    .foregroundColor(.fafGrayLight)
             }
-
-            // Timestamp
-            Text(activity.createdAt.timeAgoDisplay())
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGrayLight)
+            .padding(FAFSpacing.md)
+            .background(Color.fafOffWhite)
+            .cornerRadius(FAFRadius.md)
         }
-        .padding(FAFSpacing.md)
-        .background(Color.fafOffWhite)
-        .cornerRadius(FAFRadius.md)
+        .buttonStyle(.plain)
+    }
+
+    private func handleTap() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        if activity.isRecipeActivity, let recipeId = activity.recipeId {
+            do {
+                if let recipe = try await RecipeService.shared.fetchRecipe(id: recipeId) {
+                    onSelectRecipe?(recipe)
+                }
+            } catch {
+                print("Error fetching recipe: \(error)")
+            }
+        } else if activity.isMealPlanActivity, let mealPlanId = activity.mealPlanId {
+            do {
+                if let mealPlan = try await MealPlanService.shared.fetchMealPlan(id: mealPlanId) {
+                    onSelectMealPlan?(mealPlan)
+                }
+            } catch {
+                print("Error fetching meal plan: \(error)")
+            }
+        }
     }
 }
 

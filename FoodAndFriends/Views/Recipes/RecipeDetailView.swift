@@ -4,13 +4,31 @@ struct RecipeDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var recipeService = RecipeService.shared
     @ObservedObject var userService = UserService.shared
+    @ObservedObject var friendService = FriendService.shared
 
     let recipe: Recipe
 
     @State private var showEditSheet = false
+    @State private var showVariationSheet = false
+    @State private var variations: [RecipeVariation] = []
+    @State private var selectedVariation: RecipeVariation?
+    @State private var isLoadingVariations = false
 
     private var isOwner: Bool {
         userService.currentUser?.id == recipe.authorId
+    }
+
+    private var currentIngredients: [Ingredient] {
+        selectedVariation?.ingredients ?? recipe.ingredients
+    }
+
+    private var currentSteps: [RecipeStep] {
+        selectedVariation?.sortedSteps ?? recipe.sortedSteps
+    }
+
+    private func ingredientsForStep(_ step: RecipeStep) -> [Ingredient] {
+        let allIngredients = currentIngredients
+        return allIngredients.filter { step.ingredientIds.contains($0.id) }
     }
 
     var body: some View {
@@ -26,6 +44,16 @@ struct RecipeDetailView: View {
                     // Quick Stats
                     statsSection
 
+                    // Chef Selector (only show if variations exist)
+                    if !variations.isEmpty {
+                        chefSelectorSection
+                    }
+
+                    // Variation notes (if viewing a variation)
+                    if let variation = selectedVariation, !variation.notes.isEmpty {
+                        variationNotesSection(for: variation)
+                    }
+
                     Divider()
 
                     // Ingredients
@@ -40,6 +68,11 @@ struct RecipeDetailView: View {
                     if !recipe.tags.isEmpty {
                         Divider()
                         tagsSection
+                    }
+
+                    // Add Variation Button (for non-owners who haven't added one yet)
+                    if !isOwner && !hasUserVariation {
+                        addVariationButton
                     }
                 }
                 .padding(FAFSpacing.lg)
@@ -64,6 +97,193 @@ struct RecipeDetailView: View {
             CreateRecipeView(recipeToEdit: recipe, onDelete: {
                 dismiss()
             })
+        }
+        .sheet(isPresented: $showVariationSheet) {
+            CreateRecipeView(baseRecipeForVariation: recipe)
+        }
+        .task {
+            await loadVariations()
+        }
+    }
+
+    private var hasUserVariation: Bool {
+        guard let userId = userService.currentUser?.id else { return false }
+        return variations.contains { $0.authorId == userId }
+    }
+
+    private func loadVariations() async {
+        guard let recipeId = recipe.id else { return }
+        isLoadingVariations = true
+        do {
+            let friendIds = friendService.friends.compactMap { $0.id }
+            let allVariations = try await recipeService.fetchVariations(for: recipeId, friendIds: friendIds)
+            // Filter out variations from the recipe owner (handles edge case after promotion)
+            variations = allVariations.filter { $0.authorId != recipe.authorId }
+        } catch {
+            print("Error loading variations: \(error)")
+        }
+        isLoadingVariations = false
+    }
+
+    // MARK: - Chef Selector
+
+    private var chefSelectorSection: some View {
+        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
+            Text("Chef Variations")
+                .font(FAFTypography.caption)
+                .foregroundColor(.fafGray)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: FAFSpacing.sm) {
+                    // Original recipe pill
+                    Button {
+                        selectedVariation = nil
+                    } label: {
+                        HStack(spacing: FAFSpacing.xs) {
+                            if selectedVariation == nil {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            Text("Original")
+                                .font(FAFTypography.caption)
+                            if let author = recipe.authorUsername {
+                                Text("@\(author)")
+                                    .font(FAFTypography.caption)
+                                    .opacity(0.7)
+                            }
+                        }
+                        .foregroundColor(selectedVariation == nil ? .fafWhite : .fafGray)
+                        .padding(.horizontal, FAFSpacing.md)
+                        .padding(.vertical, FAFSpacing.sm)
+                        .background(selectedVariation == nil ? Color.fafCoral : Color.fafGrayXLight)
+                        .cornerRadius(FAFRadius.full)
+                    }
+
+                    // Variation pills
+                    ForEach(variations) { variation in
+                        Button {
+                            selectedVariation = variation
+                        } label: {
+                            HStack(spacing: FAFSpacing.xs) {
+                                if selectedVariation?.id == variation.id {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 10, weight: .bold))
+                                }
+                                if let author = variation.authorUsername {
+                                    Text("@\(author)")
+                                        .font(FAFTypography.caption)
+                                }
+                                if variation.likeCount > 0 {
+                                    HStack(spacing: 2) {
+                                        Image(systemName: "heart.fill")
+                                            .font(.system(size: 8))
+                                        Text("\(variation.likeCount)")
+                                            .font(FAFTypography.caption)
+                                    }
+                                    .opacity(0.7)
+                                }
+                            }
+                            .foregroundColor(selectedVariation?.id == variation.id ? .fafWhite : .fafGray)
+                            .padding(.horizontal, FAFSpacing.md)
+                            .padding(.vertical, FAFSpacing.sm)
+                            .background(selectedVariation?.id == variation.id ? Color.fafCoral : Color.fafGrayXLight)
+                            .cornerRadius(FAFRadius.full)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func variationNotesSection(for variation: RecipeVariation) -> some View {
+        VStack(alignment: .leading, spacing: FAFSpacing.xs) {
+            HStack {
+                Image(systemName: "note.text")
+                    .font(.system(size: 14))
+                    .foregroundColor(.fafSage)
+                Text("Chef's Notes")
+                    .font(FAFTypography.caption)
+                    .foregroundColor(.fafGray)
+
+                Spacer()
+
+                // Like button
+                Button {
+                    Task { await likeVariation(variation) }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "heart")
+                            .font(.system(size: 14))
+                        if variation.likeCount > 0 {
+                            Text("\(variation.likeCount)")
+                                .font(FAFTypography.caption)
+                        }
+                    }
+                    .foregroundColor(.fafCoral)
+                }
+
+                // Promote button (owner only)
+                if isOwner {
+                    Button {
+                        Task { await promoteVariation(variation) }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.circle")
+                                .font(.system(size: 14))
+                            Text("Promote")
+                                .font(FAFTypography.caption)
+                        }
+                        .foregroundColor(.fafSage)
+                    }
+                }
+            }
+
+            Text(variation.notes)
+                .font(FAFTypography.body)
+                .foregroundColor(.fafBlack)
+                .italic()
+        }
+        .padding(FAFSpacing.md)
+        .background(Color.fafSage.opacity(0.1))
+        .cornerRadius(FAFRadius.md)
+    }
+
+    private var addVariationButton: some View {
+        Button {
+            showVariationSheet = true
+        } label: {
+            HStack {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 18))
+                Text("Add Your Variation")
+                    .font(FAFTypography.button)
+            }
+            .foregroundColor(.fafCoral)
+            .frame(maxWidth: .infinity)
+            .padding(FAFSpacing.md)
+            .background(Color.fafCoral.opacity(0.1))
+            .cornerRadius(FAFRadius.md)
+        }
+        .padding(.top, FAFSpacing.md)
+    }
+
+    private func likeVariation(_ variation: RecipeVariation) async {
+        guard let recipeId = recipe.id else { return }
+        do {
+            try await recipeService.likeVariation(variation, recipeId: recipeId)
+            await loadVariations()
+        } catch {
+            print("Error liking variation: \(error)")
+        }
+    }
+
+    private func promoteVariation(_ variation: RecipeVariation) async {
+        guard let user = userService.currentUser else { return }
+        do {
+            try await recipeService.promoteVariation(variation, recipe: recipe, currentUser: user)
+            dismiss()
+        } catch {
+            print("Error promoting variation: \(error)")
         }
     }
 
@@ -159,7 +379,7 @@ struct RecipeDetailView: View {
                 .foregroundColor(.fafBlack)
 
             VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                ForEach(recipe.ingredients) { ingredient in
+                ForEach(currentIngredients) { ingredient in
                     HStack(alignment: .top, spacing: FAFSpacing.sm) {
                         Circle()
                             .fill(Color.fafCoral)
@@ -184,9 +404,9 @@ struct RecipeDetailView: View {
                 .foregroundColor(.fafBlack)
 
             VStack(alignment: .leading, spacing: FAFSpacing.xl) {
-                if !recipe.steps.isEmpty {
+                if !currentSteps.isEmpty {
                     // New format with per-step ingredients
-                    ForEach(Array(recipe.sortedSteps.enumerated()), id: \.element.id) { index, step in
+                    ForEach(Array(currentSteps.enumerated()), id: \.element.id) { index, step in
                         VStack(alignment: .leading, spacing: FAFSpacing.sm) {
                             HStack(alignment: .top, spacing: FAFSpacing.md) {
                                 Text("\(index + 1)")
@@ -203,7 +423,7 @@ struct RecipeDetailView: View {
                             }
 
                             // Per-step ingredients
-                            let stepIngredients = recipe.ingredients(for: step)
+                            let stepIngredients = ingredientsForStep(step)
                             if !stepIngredients.isEmpty {
                                 VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
                                     ForEach(stepIngredients) { ingredient in

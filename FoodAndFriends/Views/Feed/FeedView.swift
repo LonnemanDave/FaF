@@ -7,6 +7,8 @@ struct FeedView: View {
 
     @State private var showFriends = false
     @State private var hasLoaded = false
+    @State private var selectedRecipe: Recipe?
+    @State private var selectedMealPlan: MealPlan?
 
     var body: some View {
         NavigationStack {
@@ -28,7 +30,11 @@ struct FeedView: View {
                     } else {
                         LazyVStack(spacing: FAFSpacing.md) {
                             ForEach(feedService.feedActivities) { activity in
-                                ActivityCard(activity: activity)
+                                ActivityCard(
+                                    activity: activity,
+                                    onSelectRecipe: { selectedRecipe = $0 },
+                                    onSelectMealPlan: { selectedMealPlan = $0 }
+                                )
                             }
                         }
                         .padding(.horizontal, FAFSpacing.lg)
@@ -39,6 +45,13 @@ struct FeedView: View {
             .background(Color.fafWhite)
             .navigationTitle("Feed")
             .navigationBarTitleDisplayMode(.large)
+            .navigationDestination(item: $selectedRecipe) { recipe in
+                RecipeDetailView(recipe: recipe)
+            }
+            .navigationDestination(item: $selectedMealPlan) { mealPlan in
+                // TODO: MealPlanDetailView when implemented
+                Text("Meal Plan: \(mealPlan.name)")
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
