@@ -203,8 +203,18 @@ class RecipeService: ObservableObject {
             throw RecipeServiceError.recipeNotFound
         }
 
+        // Delete the recipe
         try await db.collection(recipesCollection).document(recipeId).delete()
         userRecipes.removeAll { $0.id == recipeId }
+
+        // Delete associated feed activities
+        let activitiesSnapshot = try await db.collection(activitiesCollection)
+            .whereField("recipeId", isEqualTo: recipeId)
+            .getDocuments()
+
+        for doc in activitiesSnapshot.documents {
+            try await doc.reference.delete()
+        }
     }
 
     // MARK: - Seed Data (Debug)

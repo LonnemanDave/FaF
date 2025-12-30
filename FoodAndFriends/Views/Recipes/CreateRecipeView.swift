@@ -8,6 +8,7 @@ struct CreateRecipeView: View {
 
     // Edit mode
     var recipeToEdit: Recipe?
+    var onDelete: (() -> Void)?
     var isEditing: Bool { recipeToEdit != nil }
 
     // Basic Info
@@ -32,6 +33,7 @@ struct CreateRecipeView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -44,6 +46,11 @@ struct CreateRecipeView: View {
                     stepsSection
                     Divider()
                     visibilitySection
+
+                    if isEditing {
+                        Divider()
+                        deleteSection
+                    }
 
                     FAFButton(
                         title: "Save Recipe",
@@ -70,6 +77,14 @@ struct CreateRecipeView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
+            }
+            .confirmationDialog("Delete Recipe", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    Task { await deleteRecipe() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to delete this recipe? This cannot be undone.")
             }
             .onAppear {
                 if let recipe = recipeToEdit {
@@ -254,6 +269,26 @@ struct CreateRecipeView: View {
         .cornerRadius(FAFRadius.md)
     }
 
+    // MARK: - Delete Section
+
+    private var deleteSection: some View {
+        Button {
+            showDeleteConfirmation = true
+        } label: {
+            HStack {
+                Image(systemName: "trash")
+                    .font(.system(size: 16))
+                Text("Delete Recipe")
+                    .font(FAFTypography.button)
+            }
+            .foregroundColor(.red)
+            .frame(maxWidth: .infinity)
+            .padding(FAFSpacing.md)
+            .background(Color.red.opacity(0.1))
+            .cornerRadius(FAFRadius.md)
+        }
+    }
+
     // MARK: - Helper Methods
 
     private var isFormValid: Bool {
@@ -343,6 +378,21 @@ struct CreateRecipeView: View {
         } catch {
             errorMessage = error.localizedDescription
             showError = true
+        }
+    }
+
+    private func deleteRecipe() async {
+        guard let recipe = recipeToEdit else { return }
+
+        isLoading = true
+        do {
+            try await recipeService.deleteRecipe(recipe)
+            dismiss()
+            onDelete?()
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+            isLoading = false
         }
     }
 }

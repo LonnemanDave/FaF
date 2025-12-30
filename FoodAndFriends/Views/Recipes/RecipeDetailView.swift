@@ -8,8 +8,6 @@ struct RecipeDetailView: View {
     let recipe: Recipe
 
     @State private var showEditSheet = false
-    @State private var showDeleteConfirmation = false
-    @State private var isDeleting = false
 
     private var isOwner: Bool {
         userService.currentUser?.id == recipe.authorId
@@ -52,45 +50,21 @@ struct RecipeDetailView: View {
         .toolbar {
             if isOwner {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            showEditSheet = true
-                        } label: {
-                            Label("Edit", systemImage: "pencil")
-                        }
-                        Button(role: .destructive) {
-                            showDeleteConfirmation = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
+                    Button {
+                        showEditSheet = true
                     } label: {
-                        FAFIcon(.menu, size: 20, color: .fafBlack)
+                        Image(systemName: "pencil")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.fafCoral)
                     }
                 }
             }
         }
         .sheet(isPresented: $showEditSheet) {
-            CreateRecipeView(recipeToEdit: recipe)
+            CreateRecipeView(recipeToEdit: recipe, onDelete: {
+                dismiss()
+            })
         }
-        .confirmationDialog("Delete Recipe", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                Task { await deleteRecipe() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Are you sure you want to delete \"\(recipe.title)\"? This cannot be undone.")
-        }
-    }
-
-    private func deleteRecipe() async {
-        isDeleting = true
-        do {
-            try await recipeService.deleteRecipe(recipe)
-            dismiss()
-        } catch {
-            print("Error deleting recipe: \(error)")
-        }
-        isDeleting = false
     }
 
     // MARK: - Hero Image
