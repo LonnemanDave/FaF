@@ -167,13 +167,27 @@ struct RecipeRowCard: View {
     var body: some View {
         NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
             HStack(spacing: FAFSpacing.md) {
-                // Recipe image placeholder
-                RoundedRectangle(cornerRadius: FAFRadius.sm)
-                    .fill(Color.fafGrayXLight)
-                    .frame(width: 80, height: 80)
-                    .overlay(
-                        FAFIcon(.fork, size: 24, color: .fafGray)
-                    )
+                // Recipe image
+                Group {
+                    if let imageURL = recipe.firstImageURL, let url = URL(string: imageURL) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            case .failure, .empty:
+                                recipePlaceholder
+                            @unknown default:
+                                recipePlaceholder
+                            }
+                        }
+                    } else {
+                        recipePlaceholder
+                    }
+                }
+                .frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: FAFRadius.sm))
 
                 VStack(alignment: .leading, spacing: FAFSpacing.xs) {
                     Text(recipe.title)
@@ -210,6 +224,14 @@ struct RecipeRowCard: View {
             .cornerRadius(FAFRadius.md)
         }
         .buttonStyle(.plain)
+    }
+
+    private var recipePlaceholder: some View {
+        Rectangle()
+            .fill(Color.fafGrayXLight)
+            .overlay(
+                FAFIcon(.fork, size: 24, color: .fafGray)
+            )
     }
 }
 
