@@ -14,8 +14,43 @@ struct RecipeDetailView: View {
     @State private var selectedVariation: RecipeVariation?
     @State private var isLoadingVariations = false
 
+    // Photo upload state
+    @State private var selectedImage: UIImage?
+    @State private var isUploadingPhoto = false
+    @State private var currentImageURL: String?
+    @State private var showImagePicker = false
+
+    // Variation editing
+    @State private var showEditVariationSheet = false
+
     private var isOwner: Bool {
         userService.currentUser?.id == recipe.authorId
+    }
+
+    private var isVariationOwner: Bool {
+        guard let variation = selectedVariation,
+              let userId = userService.currentUser?.id else { return false }
+        return variation.authorId == userId
+    }
+
+    private var displayedImageURL: String? {
+        // Show variation image if viewing a variation that has one, otherwise show recipe image
+        if let variation = selectedVariation, let variationImage = variation.imageURL {
+            return variationImage
+        }
+        return currentImageURL
+    }
+
+    private var showEditButton: Bool {
+        (selectedVariation == nil && isOwner) || isVariationOwner
+    }
+
+    private func handleEditTap() {
+        if selectedVariation == nil && isOwner {
+            showEditSheet = true
+        } else if isVariationOwner {
+            showEditVariationSheet = true
+        }
     }
 
     private var currentIngredients: [Ingredient] {
@@ -78,21 +113,9 @@ struct RecipeDetailView: View {
                 .padding(FAFSpacing.lg)
             }
         }
-        .background(Color.fafWhite)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.fafBackground.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if isOwner {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showEditSheet = true
-                    } label: {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.fafCoral)
-                    }
-                }
-            }
-        }
         .sheet(isPresented: $showEditSheet) {
             CreateRecipeView(recipeToEdit: recipe, onDelete: {
                 dismiss()
@@ -101,8 +124,31 @@ struct RecipeDetailView: View {
         .sheet(isPresented: $showVariationSheet) {
             CreateRecipeView(baseRecipeForVariation: recipe)
         }
+        .sheet(isPresented: $showEditVariationSheet) {
+            if let variation = selectedVariation {
+                CreateRecipeView(
+                    baseRecipeForVariation: recipe,
+                    variationToEdit: variation,
+                    onVariationUpdated: {
+                        Task { await loadVariations() }
+                    }
+                )
+            }
+        }
         .task {
             await loadVariations()
+            currentImageURL = recipe.firstImageURL
+        }
+        .onChange(of: selectedImage) { _, newImage in
+            if let image = newImage {
+                Task {
+                    await uploadRecipePhoto(image)
+                    selectedImage = nil
+                }
+            }
+        }
+        .sheet(isPresented: $showImagePicker) {
+            ImagePickerView(selectedImage: $selectedImage)
         }
     }
 
@@ -240,7 +286,7 @@ struct RecipeDetailView: View {
 
             Text(variation.notes)
                 .font(FAFTypography.body)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
                 .italic()
         }
         .padding(FAFSpacing.md)
@@ -290,12 +336,12 @@ struct RecipeDetailView: View {
     // MARK: - Hero Image
 
     private var recipeImage: some View {
-        ZStack {
+        ZStack(alignment: .bottomTrailing) {
             Rectangle()
                 .fill(Color.fafGrayXLight)
                 .frame(height: 250)
 
-            if let imageURL = recipe.firstImageURL, let url = URL(string: imageURL) {
+            if let imageURL = displayedImageURL, let url = URL(string: imageURL) {
                 AsyncImage(url: url) { image in
                     image
                         .resizable()
@@ -312,17 +358,118 @@ struct RecipeDetailView: View {
                         .font(FAFTypography.caption)
                         .foregroundColor(.fafGray)
                 }
+                .frame(maxWidth: .infinity, maxHeight: 250)
+            }
+
+            // Upload overlay when uploading
+            if isUploadingPhoto {
+                Rectangle()
+                    .fill(Color.black.opacity(0.5))
+                    .frame(height: 250)
+                    .overlay(
+                        ProgressView()
+                            .tint(.white)
+                            .scaleEffect(1.5)
+                    )
+            }
+
+            // Photo button for owner or variation owner
+            if showEditButton && !isUploadingPhoto {
+                Button {
+                    showImagePicker = true
+                } label: {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white)
+                        .padding(FAFSpacing.sm)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Circle())
+                }
+                .padding(FAFSpacing.md)
             }
         }
+        .frame(height: 250)
+        .clipped()
+    }
+
+    // MARK: - Upload Photo
+
+    private func uploadRecipePhoto(_ image: UIImage) async {
+        guard let recipeId = recipe.id else { return }
+
+        isUploadingPhoto = true
+
+        do {
+            let resizedImage = image.resized(toMaxDimension: 1200)
+
+            if let variation = selectedVariation {
+                // Upload for variation
+                guard let variationId = variation.id else { return }
+                let filename = "variation_\(variationId)_\(Date().timeIntervalSince1970).jpg"
+                let imageURL = try await StorageService.shared.uploadImage(
+                    resizedImage,
+                    path: "recipe_images",
+                    filename: filename
+                )
+
+                // Update the variation with the new image URL
+                var updatedVariation = variation
+                updatedVariation.imageURL = imageURL
+                try await recipeService.updateVariation(updatedVariation, recipeId: recipeId)
+
+                // Update local state
+                if let index = variations.firstIndex(where: { $0.id == variationId }) {
+                    variations[index].imageURL = imageURL
+                }
+                selectedVariation?.imageURL = imageURL
+            } else {
+                // Upload for original recipe
+                let filename = "\(recipeId)_\(Date().timeIntervalSince1970).jpg"
+                let imageURL = try await StorageService.shared.uploadImage(
+                    resizedImage,
+                    path: "recipe_images",
+                    filename: filename
+                )
+
+                // Update the recipe with the new image URL
+                var updatedRecipe = recipe
+                updatedRecipe.imageURLs = [imageURL]
+                try await recipeService.updateRecipe(updatedRecipe)
+
+                // Update local state
+                currentImageURL = imageURL
+            }
+
+            recipeService.needsRefresh = true
+        } catch {
+            print("Error uploading photo: \(error)")
+        }
+
+        isUploadingPhoto = false
     }
 
     // MARK: - Header Section
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-            Text(recipe.title)
-                .font(FAFTypography.h1)
-                .foregroundColor(.fafBlack)
+            HStack(alignment: .top) {
+                Text(recipe.title)
+                    .font(FAFTypography.h1)
+                    .foregroundColor(.fafTextPrimary)
+
+                Spacer()
+
+                // Edit button for owner or variation owner
+                if showEditButton {
+                    Button {
+                        handleEditTap()
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.fafCoral)
+                    }
+                }
+            }
 
             if !recipe.description.isEmpty {
                 Text(recipe.description)
@@ -366,7 +513,7 @@ struct RecipeDetailView: View {
         }
         .padding(FAFSpacing.md)
         .frame(maxWidth: .infinity)
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.md)
     }
 
@@ -376,7 +523,7 @@ struct RecipeDetailView: View {
         VStack(alignment: .leading, spacing: FAFSpacing.md) {
             Text("Ingredients")
                 .font(FAFTypography.h2)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
 
             VStack(alignment: .leading, spacing: FAFSpacing.sm) {
                 ForEach(currentIngredients) { ingredient in
@@ -388,7 +535,7 @@ struct RecipeDetailView: View {
 
                         Text(ingredient.displayString)
                             .font(FAFTypography.body)
-                            .foregroundColor(.fafBlack)
+                            .foregroundColor(.fafTextPrimary)
                     }
                 }
             }
@@ -401,7 +548,7 @@ struct RecipeDetailView: View {
         VStack(alignment: .leading, spacing: FAFSpacing.md) {
             Text("Instructions")
                 .font(FAFTypography.h2)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
 
             VStack(alignment: .leading, spacing: FAFSpacing.xl) {
                 if !currentSteps.isEmpty {
@@ -418,7 +565,7 @@ struct RecipeDetailView: View {
 
                                 Text(step.instruction)
                                     .font(FAFTypography.body)
-                                    .foregroundColor(.fafBlack)
+                                    .foregroundColor(.fafTextPrimary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
 
@@ -454,7 +601,7 @@ struct RecipeDetailView: View {
 
                             Text(instruction)
                                 .font(FAFTypography.body)
-                                .foregroundColor(.fafBlack)
+                                .foregroundColor(.fafTextPrimary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -469,7 +616,7 @@ struct RecipeDetailView: View {
         VStack(alignment: .leading, spacing: FAFSpacing.sm) {
             Text("Tags")
                 .font(FAFTypography.h3)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: FAFSpacing.xs) {
@@ -503,7 +650,7 @@ struct StatItem: View {
 
             Text(value)
                 .font(FAFTypography.bodyBold)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
 
             Text(label)
                 .font(FAFTypography.caption)

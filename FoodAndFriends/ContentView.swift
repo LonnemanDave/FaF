@@ -17,7 +17,7 @@ struct ContentView: View {
                         .padding(.top, FAFSpacing.md)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.fafWhite)
+                .background(Color.fafBackground)
 
             case .signedOut:
                 LoginView()
@@ -30,7 +30,6 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut, value: authManager.authState)
-        .preferredColorScheme(.light)
     }
 }
 

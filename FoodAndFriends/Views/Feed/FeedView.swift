@@ -42,7 +42,8 @@ struct FeedView: View {
                 }
                 .padding(.vertical, FAFSpacing.lg)
             }
-            .background(Color.fafWhite)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.fafBackground.ignoresSafeArea())
             .navigationTitle("Feed")
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(item: $selectedRecipe) { recipe in

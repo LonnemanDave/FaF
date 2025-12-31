@@ -43,7 +43,8 @@ struct HomeView: View {
                     }
                 }
             }
-            .background(Color.fafWhite)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.fafBackground.ignoresSafeArea())
             .navigationTitle("Home")
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(item: $selectedRecipe) { recipe in
@@ -117,7 +118,7 @@ struct TodaysMealsCard: View {
         VStack(alignment: .leading, spacing: FAFSpacing.md) {
             Text("Today's Meals")
                 .font(FAFTypography.h3)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
 
             VStack(spacing: FAFSpacing.sm) {
                 if todaysMeals.isEmpty {
@@ -130,7 +131,7 @@ struct TodaysMealsCard: View {
                 }
             }
             .padding(FAFSpacing.md)
-            .background(Color.fafOffWhite)
+            .background(Color.fafCardBackground)
             .cornerRadius(FAFRadius.md)
         }
         .padding(.horizontal, FAFSpacing.lg)
@@ -166,7 +167,7 @@ struct MealRow: View {
 
             Text(mealType.displayName)
                 .font(FAFTypography.bodyBold)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
                 .frame(width: 80, alignment: .leading)
 
             if let meal = meal {
@@ -194,7 +195,7 @@ struct QuickActionsSection: View {
         VStack(alignment: .leading, spacing: FAFSpacing.md) {
             Text("Quick Actions")
                 .font(FAFTypography.h3)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
 
             HStack(spacing: FAFSpacing.md) {
                 DashboardActionButton(
@@ -233,7 +234,7 @@ struct DashboardActionButton: View {
 
                 Text(title)
                     .font(FAFTypography.button)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, FAFSpacing.lg)
@@ -255,7 +256,7 @@ struct RecentActivitySection: View {
             HStack {
                 Text("Recent Activity")
                     .font(FAFTypography.h3)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
 
                 Spacer()
 
@@ -297,7 +298,7 @@ struct EmptyActivityPreview: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, FAFSpacing.lg)
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.md)
     }
 }
@@ -342,7 +343,7 @@ struct CompactActivityCard: View {
 
                     Text(activity.contentTitle ?? "Shared something")
                         .font(FAFTypography.bodyBold)
-                        .foregroundColor(.fafBlack)
+                        .foregroundColor(.fafTextPrimary)
                         .lineLimit(1)
                 }
 
@@ -358,7 +359,7 @@ struct CompactActivityCard: View {
                 }
             }
             .padding(FAFSpacing.sm)
-            .background(Color.fafOffWhite)
+            .background(Color.fafCardBackground)
             .cornerRadius(FAFRadius.sm)
         }
         .buttonStyle(.plain)
@@ -407,7 +408,7 @@ struct MyRecipesSection: View {
             HStack {
                 Text("My Recipes")
                     .font(FAFTypography.h3)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
 
                 Spacer()
 
@@ -449,7 +450,7 @@ struct EmptyRecipesPreview: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, FAFSpacing.lg)
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.md)
     }
 }
@@ -469,7 +470,7 @@ struct CompactRecipeCard: View {
 
             Text(recipe.title)
                 .font(FAFTypography.bodyBold)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
                 .lineLimit(1)
 
             if let time = recipe.totalTimeMinutes {

@@ -23,7 +23,7 @@ struct ProfileSetupView: View {
                 FAFIcon(.profile, size: 48, color: .fafCoral)
                 Text("Complete Your Profile")
                     .font(FAFTypography.h1)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
                 Text("Choose a unique username and set your location")
                     .font(FAFTypography.body)
                     .foregroundColor(.fafGray)
@@ -151,7 +151,7 @@ struct ProfileSetupView: View {
             .padding(.bottom, FAFSpacing.lg)
         }
         .padding(FAFSpacing.lg)
-        .background(Color.fafWhite)
+        .background(Color.fafBackground)
         .onTapGesture {
             dismissKeyboard()
         }

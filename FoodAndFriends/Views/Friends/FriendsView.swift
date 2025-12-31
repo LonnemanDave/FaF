@@ -15,7 +15,7 @@ struct FriendsView: View {
                         VStack(alignment: .leading, spacing: FAFSpacing.sm) {
                             Text("Friend Requests")
                                 .font(FAFTypography.h3)
-                                .foregroundColor(.fafBlack)
+                                .foregroundColor(.fafTextPrimary)
                                 .padding(.horizontal, FAFSpacing.lg)
 
                             ForEach(friendService.pendingRequests) { request in
@@ -29,7 +29,7 @@ struct FriendsView: View {
                     VStack(alignment: .leading, spacing: FAFSpacing.sm) {
                         Text("My Friends")
                             .font(FAFTypography.h3)
-                            .foregroundColor(.fafBlack)
+                            .foregroundColor(.fafTextPrimary)
                             .padding(.horizontal, FAFSpacing.lg)
 
                         if friendService.friends.isEmpty {
@@ -44,7 +44,8 @@ struct FriendsView: View {
                 }
                 .padding(.bottom, FAFSpacing.xl)
             }
-            .background(Color.fafWhite)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.fafBackground.ignoresSafeArea())
             .navigationTitle("Friends")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -95,7 +96,7 @@ struct FriendRequestRow: View {
             VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
                 Text("@\(request.fromUsername ?? "unknown")")
                     .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
                 Text("wants to be friends")
                     .font(FAFTypography.caption)
                     .foregroundColor(.fafGray)
@@ -129,7 +130,7 @@ struct FriendRequestRow: View {
             }
         }
         .padding(FAFSpacing.md)
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.md)
         .padding(.horizontal, FAFSpacing.lg)
     }
@@ -191,7 +192,7 @@ struct FriendRow: View {
                 VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
                     Text("@\(friend.username)")
                         .font(FAFTypography.bodyBold)
-                        .foregroundColor(.fafBlack)
+                        .foregroundColor(.fafTextPrimary)
                     Text(friend.location)
                         .font(FAFTypography.caption)
                         .foregroundColor(.fafGray)
@@ -200,7 +201,7 @@ struct FriendRow: View {
                 Spacer()
             }
             .padding(FAFSpacing.md)
-            .background(Color.fafOffWhite)
+            .background(Color.fafCardBackground)
             .cornerRadius(FAFRadius.md)
             .padding(.horizontal, FAFSpacing.lg)
         }

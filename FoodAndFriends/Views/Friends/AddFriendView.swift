@@ -42,7 +42,7 @@ struct AddFriendView: View {
                     }
                 }
                 .padding(FAFSpacing.md)
-                .background(Color.fafOffWhite)
+                .background(Color.fafInputBackground)
                 .cornerRadius(FAFRadius.md)
                 .padding(FAFSpacing.lg)
 
@@ -85,7 +85,8 @@ struct AddFriendView: View {
                     }
                 }
             }
-            .background(Color.fafWhite)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.fafBackground.ignoresSafeArea())
             .navigationTitle("Add Friend")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -176,7 +177,7 @@ struct SearchResultRow: View {
             VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
                 Text("@\(user.username)")
                     .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
                 Text(user.location)
                     .font(FAFTypography.caption)
                     .foregroundColor(.fafGray)
@@ -216,7 +217,7 @@ struct SearchResultRow: View {
             }
         }
         .padding(FAFSpacing.md)
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.md)
     }
 

@@ -29,13 +29,14 @@ struct UserProfileView: View {
                 .padding(.bottom, FAFSpacing.xxxl)
             }
         }
-        .background(Color.fafWhite)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.fafBackground.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("@\(user.username)")
                     .font(FAFTypography.h3)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
             }
         }
         .task {
@@ -55,7 +56,7 @@ struct UserProfileView: View {
                 // Profile image
                 ZStack {
                     Circle()
-                        .fill(Color.fafWhite)
+                        .fill(Color.fafBackground)
                         .frame(width: 148, height: 148)
 
                     if let imageURL = user.profileImageURL, let url = URL(string: imageURL) {
@@ -89,7 +90,7 @@ struct UserProfileView: View {
             VStack(spacing: FAFSpacing.xs) {
                 Text(user.displayName ?? user.username)
                     .font(FAFTypography.h1)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
 
                 if user.displayName != nil {
                     Text("@\(user.username)")
@@ -133,7 +134,7 @@ struct UserProfileView: View {
         VStack(alignment: .leading, spacing: FAFSpacing.md) {
             Text("Recipes")
                 .font(FAFTypography.h3)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
 
             if isLoading {
                 HStack {
@@ -151,7 +152,7 @@ struct UserProfileView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, FAFSpacing.xl)
-                .background(Color.fafOffWhite)
+                .background(Color.fafCardBackground)
                 .cornerRadius(FAFRadius.md)
             } else {
                 LazyVStack(spacing: FAFSpacing.sm) {
@@ -199,7 +200,7 @@ struct UserRecipeCard: View {
             VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
                 Text(recipe.title)
                     .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
                     .lineLimit(1)
 
                 if let time = recipe.totalTimeMinutes {
@@ -212,7 +213,7 @@ struct UserRecipeCard: View {
             Spacer()
         }
         .padding(FAFSpacing.sm)
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.sm)
     }
 }

@@ -34,7 +34,7 @@ struct MealPlanPreviewCard: View {
             FAFIcon(.forward, size: 16, color: .fafGrayLight)
         }
         .padding(FAFSpacing.sm)
-        .background(Color.fafWhite)
+        .background(Color.fafBackground)
         .cornerRadius(FAFRadius.sm)
     }
 }

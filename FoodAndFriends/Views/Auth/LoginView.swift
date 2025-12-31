@@ -26,7 +26,7 @@ struct LoginView: View {
                 FAFIcon(.fork, size: 48, color: .fafCoral)
                 Text("Food & Friends")
                     .font(FAFTypography.displayMedium)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
                 Text("Share meals, make memories")
                     .font(FAFTypography.body)
                     .foregroundColor(.fafGray)
@@ -148,7 +148,7 @@ struct LoginView: View {
         }
         .padding(FAFSpacing.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.fafWhite)
+        .background(Color.fafBackground.ignoresSafeArea())
         .onTapGesture {
             focusedField = nil
         }
@@ -221,10 +221,10 @@ struct TextFieldStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .font(.system(size: 15))
-            .foregroundColor(.black)
+            .foregroundColor(.fafTextPrimary)
             .tint(.fafCoral)
             .padding(16)
-            .background(Color(uiColor: .systemGray6))
+            .background(Color.fafInputBackground)
             .cornerRadius(12)
     }
 }

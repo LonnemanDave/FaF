@@ -19,10 +19,12 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct FoodAndFriendsApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @StateObject private var appearanceManager = AppearanceManager.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .preferredColorScheme(appearanceManager.colorScheme)
         }
     }
 }

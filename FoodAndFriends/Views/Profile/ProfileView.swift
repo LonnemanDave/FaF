@@ -3,6 +3,7 @@ import SwiftUI
 struct ProfileView: View {
     @ObservedObject var authManager = AuthManager.shared
     @ObservedObject var userService = UserService.shared
+    @ObservedObject var appearanceManager = AppearanceManager.shared
 
     @State private var selectedImage: UIImage?
     @State private var isUploading = false
@@ -35,20 +36,14 @@ struct ProfileView: View {
                     .padding(.bottom, FAFSpacing.xxxl)
                 }
             }
-            .background(Color.fafWhite)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.fafBackground.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text("Profile")
                         .font(FAFTypography.h3)
-                        .foregroundColor(.fafBlack)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        // Settings action
-                    } label: {
-                        FAFIcon(.settings, size: 22, color: .fafBlack)
-                    }
+                        .foregroundColor(.fafTextPrimary)
                 }
             }
             .alert("Error", isPresented: $showError) {
@@ -70,9 +65,9 @@ struct ProfileView: View {
 
                 // Profile image overlapping the banner
                 ZStack {
-                    // White border ring
+                    // Border ring
                     Circle()
-                        .fill(Color.fafWhite)
+                        .fill(Color.fafBackground)
                         .frame(width: 148, height: 148)
 
                     ProfileImagePicker(
@@ -106,7 +101,7 @@ struct ProfileView: View {
                     // Display Name or Username as primary
                     Text(user.displayName ?? user.username)
                         .font(FAFTypography.h1)
-                        .foregroundColor(.fafBlack)
+                        .foregroundColor(.fafTextPrimary)
 
                     // Username (if display name exists)
                     if user.displayName != nil {
@@ -195,6 +190,9 @@ struct ProfileView: View {
                 ]
             )
 
+            // Appearance Section
+            appearanceSection
+
             ProfileMenuCard(
                 title: "Support",
                 items: [
@@ -203,6 +201,36 @@ struct ProfileView: View {
                 ]
             )
         }
+    }
+
+    // MARK: - Appearance Section
+
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Appearance")
+                .font(FAFTypography.labelLarge)
+                .foregroundColor(.fafGray)
+                .padding(.horizontal, FAFSpacing.md)
+                .padding(.top, FAFSpacing.md)
+                .padding(.bottom, FAFSpacing.xs)
+
+            HStack(spacing: FAFSpacing.sm) {
+                ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                    AppearanceModeButton(
+                        mode: mode,
+                        isSelected: appearanceManager.appearanceMode == mode
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            appearanceManager.appearanceMode = mode
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, FAFSpacing.md)
+            .padding(.bottom, FAFSpacing.md)
+        }
+        .background(Color.fafBackgroundSecondary)
+        .cornerRadius(FAFRadius.md)
     }
 
     // MARK: - Sign Out Section
@@ -262,7 +290,7 @@ struct StatCard: View {
 
             Text(value)
                 .font(FAFTypography.h2)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
 
             Text(label)
                 .font(FAFTypography.caption)
@@ -270,7 +298,7 @@ struct StatCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, FAFSpacing.md)
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.md)
     }
 }
@@ -326,7 +354,7 @@ struct ProfileMenuCard: View {
                 }
             }
         }
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.md)
     }
 }
@@ -348,7 +376,7 @@ struct ProfileMenuItem: View {
 
                 Text(title)
                     .font(FAFTypography.body)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
 
                 Spacer()
 
@@ -388,7 +416,7 @@ struct ProfileHeaderBackground: View {
         GeometryReader { geometry in
             ZStack {
                 // Clean solid background
-                Color.fafOffWhite
+                Color.fafBackgroundSecondary
 
                 // Scattered food icons in brand colors
                 ForEach(0..<iconData.count, id: \.self) { index in
@@ -406,6 +434,37 @@ struct ProfileHeaderBackground: View {
             }
         }
         .clipped()
+    }
+}
+
+// MARK: - Appearance Mode Button
+
+struct AppearanceModeButton: View {
+    let mode: AppearanceMode
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: FAFSpacing.xs) {
+                Image(systemName: mode.icon)
+                    .font(.system(size: 20))
+                    .foregroundColor(isSelected ? .fafCoral : .fafGray)
+
+                Text(mode.rawValue)
+                    .font(FAFTypography.caption)
+                    .foregroundColor(isSelected ? .fafTextPrimary : .fafGray)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, FAFSpacing.sm)
+            .background(isSelected ? Color.fafCoralLight : Color.clear)
+            .cornerRadius(FAFRadius.sm)
+            .overlay(
+                RoundedRectangle(cornerRadius: FAFRadius.sm)
+                    .stroke(isSelected ? Color.fafCoral : Color.fafDivider, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

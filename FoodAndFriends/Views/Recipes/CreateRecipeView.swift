@@ -13,7 +13,10 @@ struct CreateRecipeView: View {
 
     // Variation mode
     var baseRecipeForVariation: Recipe?
+    var variationToEdit: RecipeVariation?
+    var onVariationUpdated: (() -> Void)?
     var isVariationMode: Bool { baseRecipeForVariation != nil }
+    var isEditingVariation: Bool { variationToEdit != nil }
 
     // Basic Info
     @State private var title = ""
@@ -49,6 +52,21 @@ struct CreateRecipeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: FAFSpacing.xl) {
+                    // Close button
+                    HStack {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.fafGray)
+                                .padding(FAFSpacing.sm)
+                                .background(Color.fafGrayXLight)
+                                .clipShape(Circle())
+                        }
+                        Spacer()
+                    }
+
                     // Variation header
                     if effectiveVariationMode, let baseRecipe = effectiveBaseRecipe {
                         variationHeader(for: baseRecipe)
@@ -88,15 +106,10 @@ struct CreateRecipeView: View {
                 }
                 .padding(FAFSpacing.lg)
             }
-            .background(Color.fafWhite)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.fafBackground.ignoresSafeArea())
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundColor(.fafCoral)
-                }
-            }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -126,6 +139,8 @@ struct CreateRecipeView: View {
             .onAppear {
                 if let recipe = recipeToEdit {
                     populateFields(from: recipe)
+                } else if let variation = variationToEdit {
+                    populateFieldsFromVariation(variation)
                 } else if let baseRecipe = baseRecipeForVariation {
                     populateFieldsForVariation(from: baseRecipe)
                 }
@@ -134,7 +149,9 @@ struct CreateRecipeView: View {
     }
 
     private var navigationTitle: String {
-        if effectiveVariationMode {
+        if isEditingVariation {
+            return "Edit Variation"
+        } else if effectiveVariationMode {
             return "Your Variation"
         } else if isEditing {
             return "Edit Recipe"
@@ -161,6 +178,13 @@ struct CreateRecipeView: View {
         steps = recipe.sortedSteps
     }
 
+    private func populateFieldsFromVariation(_ variation: RecipeVariation) {
+        // Populate from an existing variation for editing
+        ingredients = variation.ingredients
+        steps = variation.sortedSteps
+        variationNotes = variation.notes
+    }
+
     @State private var internalVariationMode = false
     @State private var internalBaseRecipe: Recipe?
 
@@ -169,7 +193,7 @@ struct CreateRecipeView: View {
     }
 
     private var effectiveVariationMode: Bool {
-        isVariationMode || internalVariationMode
+        isVariationMode || internalVariationMode || isEditingVariation
     }
 
     private func switchToVariationMode(for recipe: Recipe) {
@@ -191,7 +215,7 @@ struct CreateRecipeView: View {
             }
             Text(recipe.title)
                 .font(FAFTypography.h2)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
             if let author = recipe.authorUsername {
                 Text("Original by @\(author)")
                     .font(FAFTypography.caption)
@@ -218,11 +242,11 @@ struct CreateRecipeView: View {
                 .font(FAFTypography.body)
                 .frame(minHeight: 100)
                 .padding(FAFSpacing.sm)
-                .background(Color.fafOffWhite)
+                .background(Color.fafInputBackground)
                 .cornerRadius(FAFRadius.md)
                 .overlay(
                     RoundedRectangle(cornerRadius: FAFRadius.md)
-                        .stroke(Color.fafGrayXLight, lineWidth: 1)
+                        .stroke(Color.fafDivider, lineWidth: 1)
                 )
         }
     }
@@ -243,11 +267,11 @@ struct CreateRecipeView: View {
                     .font(FAFTypography.body)
                     .frame(minHeight: 80)
                     .padding(FAFSpacing.sm)
-                    .background(Color.fafOffWhite)
+                    .background(Color.fafInputBackground)
                     .cornerRadius(FAFRadius.md)
                     .overlay(
                         RoundedRectangle(cornerRadius: FAFRadius.md)
-                            .stroke(Color.fafGrayXLight, lineWidth: 1)
+                            .stroke(Color.fafDivider, lineWidth: 1)
                     )
             }
 
@@ -279,7 +303,7 @@ struct CreateRecipeView: View {
                     .font(FAFTypography.body)
                     .frame(width: 50)
                     .padding(FAFSpacing.sm)
-                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafOffWhite)
+                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafInputBackground)
                     .cornerRadius(FAFRadius.sm)
                     .keyboardType(.decimalPad)
 
@@ -287,13 +311,13 @@ struct CreateRecipeView: View {
                     .font(FAFTypography.body)
                     .frame(width: 60)
                     .padding(FAFSpacing.sm)
-                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafOffWhite)
+                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafInputBackground)
                     .cornerRadius(FAFRadius.sm)
 
                 TextField("Ingredient", text: $newIngredientName)
                     .font(FAFTypography.body)
                     .padding(FAFSpacing.sm)
-                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafOffWhite)
+                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafInputBackground)
                     .cornerRadius(FAFRadius.sm)
 
                 if isEditingIngredient {
@@ -331,7 +355,7 @@ struct CreateRecipeView: View {
 
                                 Text(ingredient.displayString)
                                     .font(FAFTypography.body)
-                                    .foregroundColor(editingIngredientId == ingredient.id ? .fafGray : .fafBlack)
+                                    .foregroundColor(editingIngredientId == ingredient.id ? .fafGray : .fafTextPrimary)
 
                                 Spacer()
 
@@ -403,7 +427,7 @@ struct CreateRecipeView: View {
             VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
                 Text("Make Public")
                     .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
                 Text("Share with the community")
                     .font(FAFTypography.caption)
                     .foregroundColor(.fafGray)
@@ -413,7 +437,7 @@ struct CreateRecipeView: View {
                 .tint(.fafCoral)
         }
         .padding(FAFSpacing.md)
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.md)
     }
 
@@ -517,7 +541,19 @@ struct CreateRecipeView: View {
         defer { isLoading = false }
 
         do {
-            // Handle variation mode
+            // Handle editing existing variation
+            if isEditingVariation, let existingVariation = variationToEdit, let recipeId = existingVariation.recipeId as String? {
+                var updatedVariation = existingVariation
+                updatedVariation.ingredients = ingredients
+                updatedVariation.steps = steps
+                updatedVariation.notes = variationNotes
+                try await recipeService.updateVariation(updatedVariation, recipeId: recipeId)
+                onVariationUpdated?()
+                dismiss()
+                return
+            }
+
+            // Handle creating new variation
             if effectiveVariationMode, let baseRecipe = effectiveBaseRecipe, let recipeId = baseRecipe.id {
                 let variation = RecipeVariation(
                     recipeId: recipeId,
@@ -613,7 +649,7 @@ struct SectionHeader: View {
                 .foregroundColor(.fafCoral)
             Text(title)
                 .font(FAFTypography.h3)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
         }
     }
 }
@@ -635,11 +671,11 @@ struct FormField: View {
                 .font(FAFTypography.body)
                 .keyboardType(keyboardType)
                 .padding(FAFSpacing.md)
-                .background(Color.fafOffWhite)
+                .background(Color.fafInputBackground)
                 .cornerRadius(FAFRadius.md)
                 .overlay(
                     RoundedRectangle(cornerRadius: FAFRadius.md)
-                        .stroke(Color.fafGrayXLight, lineWidth: 1)
+                        .stroke(Color.fafDivider, lineWidth: 1)
                 )
         }
     }
@@ -707,11 +743,11 @@ struct StepEditorCard: View {
                 .font(FAFTypography.body)
                 .frame(minHeight: 60)
                 .padding(FAFSpacing.sm)
-                .background(Color.fafWhite)
+                .background(Color.fafBackground)
                 .cornerRadius(FAFRadius.sm)
                 .overlay(
                     RoundedRectangle(cornerRadius: FAFRadius.sm)
-                        .stroke(Color.fafGrayXLight, lineWidth: 1)
+                        .stroke(Color.fafDivider, lineWidth: 1)
                 )
 
             VStack(alignment: .leading, spacing: FAFSpacing.xs) {
@@ -744,7 +780,7 @@ struct StepEditorCard: View {
             }
         }
         .padding(FAFSpacing.md)
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.md)
     }
 
@@ -768,7 +804,7 @@ struct StepEditorCard: View {
                             .foregroundColor(isSelected ? .fafCoral : .fafGray)
                         Text(ingredient.displayString)
                             .font(FAFTypography.body)
-                            .foregroundColor(.fafBlack)
+                            .foregroundColor(.fafTextPrimary)
                         Spacer()
                     }
                     .padding(.vertical, FAFSpacing.xxs)
@@ -776,7 +812,7 @@ struct StepEditorCard: View {
             }
         }
         .padding(FAFSpacing.sm)
-        .background(Color.fafWhite)
+        .background(Color.fafBackgroundTertiary)
         .cornerRadius(FAFRadius.sm)
     }
 }
@@ -791,7 +827,7 @@ struct IngredientChip: View {
         HStack(spacing: FAFSpacing.xxs) {
             Text(ingredient.displayString)
                 .font(FAFTypography.caption)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
             Button { onRemove() } label: {
                 FAFIcon(.close, size: 12, color: .fafGray)
             }

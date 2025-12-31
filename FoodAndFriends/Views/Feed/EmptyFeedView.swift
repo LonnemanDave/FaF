@@ -62,10 +62,10 @@ struct EmptyFeedView: View {
 
 #Preview("No Friends") {
     EmptyFeedView(hasFriends: false)
-        .background(Color.fafWhite)
+        .background(Color.fafBackground)
 }
 
 #Preview("Has Friends") {
     EmptyFeedView(hasFriends: true)
-        .background(Color.fafWhite)
+        .background(Color.fafBackground)
 }

@@ -65,5 +65,5 @@ struct ActivityCardSkeleton: View {
         FeedLoadingView()
             .padding()
     }
-    .background(Color.fafWhite)
+    .background(Color.fafBackground)
 }

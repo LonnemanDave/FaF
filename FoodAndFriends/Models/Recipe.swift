@@ -110,6 +110,7 @@ struct RecipeVariation: Codable, Identifiable {
     var ingredients: [Ingredient]
     var steps: [RecipeStep]
     var notes: String
+    var imageURL: String?
     var likeCount: Int
     let createdAt: Date
     var updatedAt: Date
@@ -125,6 +126,7 @@ struct RecipeVariation: Codable, Identifiable {
         ingredients: [Ingredient] = [],
         steps: [RecipeStep] = [],
         notes: String = "",
+        imageURL: String? = nil,
         likeCount: Int = 0,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
@@ -137,6 +139,7 @@ struct RecipeVariation: Codable, Identifiable {
         self.ingredients = ingredients
         self.steps = steps
         self.notes = notes
+        self.imageURL = imageURL
         self.likeCount = likeCount
         self.createdAt = createdAt
         self.updatedAt = updatedAt

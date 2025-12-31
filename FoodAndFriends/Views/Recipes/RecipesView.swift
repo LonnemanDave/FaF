@@ -28,22 +28,26 @@ struct RecipesView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                filterTabs
-                    .padding(.horizontal, FAFSpacing.lg)
-                    .padding(.vertical, FAFSpacing.sm)
+            ZStack {
+                Color.fafBackground
+                    .ignoresSafeArea()
 
-                Group {
-                    if !hasLoaded || recipeService.isLoading {
-                        RecipesLoadingView()
-                    } else if displayedRecipes.isEmpty {
-                        EmptyRecipesView(filter: selectedFilter, onCreateRecipe: { showCreateRecipe = true })
-                    } else {
-                        RecipesList(recipes: displayedRecipes)
+                VStack(spacing: 0) {
+                    filterTabs
+                        .padding(.horizontal, FAFSpacing.lg)
+                        .padding(.vertical, FAFSpacing.sm)
+
+                    Group {
+                        if !hasLoaded || recipeService.isLoading {
+                            RecipesLoadingView()
+                        } else if displayedRecipes.isEmpty {
+                            EmptyRecipesView(filter: selectedFilter, onCreateRecipe: { showCreateRecipe = true })
+                        } else {
+                            RecipesList(recipes: displayedRecipes)
+                        }
                     }
                 }
             }
-            .background(Color.fafWhite)
             .navigationTitle("Recipes")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -174,7 +178,7 @@ struct RecipeRowCard: View {
                 VStack(alignment: .leading, spacing: FAFSpacing.xs) {
                     Text(recipe.title)
                         .font(FAFTypography.bodyBold)
-                        .foregroundColor(.fafBlack)
+                        .foregroundColor(.fafTextPrimary)
                         .lineLimit(2)
 
                     if !recipe.description.isEmpty {
@@ -202,7 +206,7 @@ struct RecipeRowCard: View {
                 Spacer()
             }
             .padding(FAFSpacing.md)
-            .background(Color.fafOffWhite)
+            .background(Color.fafCardBackground)
             .cornerRadius(FAFRadius.md)
         }
         .buttonStyle(.plain)
@@ -226,7 +230,7 @@ struct EmptyRecipesView: View {
 
                 Text(titleText)
                     .font(FAFTypography.h2)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
 
                 Text(subtitleText)
                     .font(FAFTypography.body)
@@ -312,7 +316,7 @@ struct RecipesLoadingView: View {
                         Spacer()
                     }
                     .padding(FAFSpacing.md)
-                    .background(Color.fafOffWhite)
+                    .background(Color.fafCardBackground)
                     .cornerRadius(FAFRadius.md)
                 }
             }

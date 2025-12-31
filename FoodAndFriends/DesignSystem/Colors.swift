@@ -3,10 +3,43 @@ import SwiftUI
 // MARK: - Color Palette
 /// Food and Friends color system
 /// Monochrome base with warm food-inspired accents
+/// Supports both light and dark mode
 
 extension Color {
 
-    // MARK: - Primary (Monochrome)
+    // MARK: - Adaptive Colors (Light/Dark)
+
+    /// Primary background - white in light, dark gray in dark
+    static let fafBackground = Color(light: Color(hex: "FFFFFF"), dark: Color(hex: "1C1C1E"))
+
+    /// Secondary background - off-white in light, slightly lighter dark in dark
+    static let fafBackgroundSecondary = Color(light: Color(hex: "F5F5F5"), dark: Color(hex: "2C2C2E"))
+
+    /// Tertiary background - light gray in light, medium dark in dark
+    static let fafBackgroundTertiary = Color(light: Color(hex: "FAFAFA"), dark: Color(hex: "3A3A3C"))
+
+    /// Card/elevated background
+    static let fafCardBackground = Color(light: Color(hex: "FFFFFF"), dark: Color(hex: "2C2C2E"))
+
+    /// Primary text - black in light, white in dark
+    static let fafTextPrimary = Color(light: Color(hex: "000000"), dark: Color(hex: "FFFFFF"))
+
+    /// Secondary text - dark gray in light, light gray in dark
+    static let fafTextSecondary = Color(light: Color(hex: "333333"), dark: Color(hex: "EBEBF5"))
+
+    /// Tertiary text - medium gray
+    static let fafTextTertiary = Color(light: Color(hex: "666666"), dark: Color(hex: "EBEBF599"))
+
+    /// Disabled/placeholder text
+    static let fafTextDisabled = Color(light: Color(hex: "999999"), dark: Color(hex: "636366"))
+
+    /// Dividers and borders
+    static let fafDivider = Color(light: Color(hex: "E5E5E5"), dark: Color(hex: "38383A"))
+
+    /// Input field backgrounds
+    static let fafInputBackground = Color(light: Color(hex: "FAFAFA"), dark: Color(hex: "1C1C1E"))
+
+    // MARK: - Legacy Static Colors (for backwards compatibility)
 
     /// Pure black - for primary text and bold elements
     static let fafBlack = Color(hex: "000000")
@@ -35,6 +68,7 @@ extension Color {
     static let fafGrayXXLight = Color(hex: "F5F5F5")
 
     // MARK: - Accent Colors (Food-Inspired)
+    // These remain consistent across light/dark for brand identity
 
     /// Coral - primary warm accent, CTAs, highlights
     static let fafCoral = Color(hex: "FF6B5B")
@@ -42,8 +76,8 @@ extension Color {
     /// Warm orange - secondary warm accent
     static let fafOrange = Color(hex: "FF8C42")
 
-    /// Muted coral - lighter accent for backgrounds
-    static let fafCoralLight = Color(hex: "FFE5E2")
+    /// Muted coral - lighter accent for backgrounds (adapts in dark mode)
+    static let fafCoralLight = Color(light: Color(hex: "FFE5E2"), dark: Color(hex: "4A2522"))
 
     /// Sage green - primary cool accent, balance to coral
     static let fafSage = Color(hex: "8B9A7B")
@@ -51,8 +85,8 @@ extension Color {
     /// Deep sage - darker green for emphasis
     static let fafSageDark = Color(hex: "6B7A5B")
 
-    /// Light sage - subtle green for backgrounds
-    static let fafSageLight = Color(hex: "E8EDE4")
+    /// Light sage - subtle green for backgrounds (adapts in dark mode)
+    static let fafSageLight = Color(light: Color(hex: "E8EDE4"), dark: Color(hex: "2A3328"))
 
     // MARK: - Semantic Colors
 
@@ -97,13 +131,15 @@ extension Color {
 // MARK: - Dark Mode Support
 
 extension Color {
-
-    /// Adaptive background - white in light mode, black in dark mode
-    static let fafBackground = Color("Background")
-
-    /// Adaptive foreground - black in light mode, white in dark mode
-    static let fafForeground = Color("Foreground")
-
-    /// Adaptive secondary background
-    static let fafBackgroundSecondary = Color("BackgroundSecondary")
+    /// Creates an adaptive color that changes based on the current color scheme
+    init(light: Color, dark: Color) {
+        self.init(UIColor { traitCollection in
+            switch traitCollection.userInterfaceStyle {
+            case .dark:
+                return UIColor(dark)
+            default:
+                return UIColor(light)
+            }
+        })
+    }
 }

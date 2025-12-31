@@ -8,16 +8,20 @@ struct MealPlansView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if !hasLoaded || mealPlanService.isLoading {
-                    MealPlansLoadingView()
-                } else if mealPlanService.userMealPlans.isEmpty {
-                    EmptyMealPlansView()
-                } else {
-                    MealPlansList(mealPlans: mealPlanService.userMealPlans)
+            ZStack {
+                Color.fafBackground
+                    .ignoresSafeArea()
+
+                Group {
+                    if !hasLoaded || mealPlanService.isLoading {
+                        MealPlansLoadingView()
+                    } else if mealPlanService.userMealPlans.isEmpty {
+                        EmptyMealPlansView()
+                    } else {
+                        MealPlansList(mealPlans: mealPlanService.userMealPlans)
+                    }
                 }
             }
-            .background(Color.fafWhite)
             .navigationTitle("Meal Plans")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -99,7 +103,7 @@ struct MealPlanSection: View {
         VStack(alignment: .leading, spacing: FAFSpacing.md) {
             Text(title)
                 .font(FAFTypography.h3)
-                .foregroundColor(.fafBlack)
+                .foregroundColor(.fafTextPrimary)
                 .padding(.horizontal, FAFSpacing.lg)
 
             ForEach(plans) { plan in
@@ -136,7 +140,7 @@ struct MealPlanRowCard: View {
                 HStack {
                     Text(mealPlan.name)
                         .font(FAFTypography.bodyBold)
-                        .foregroundColor(.fafBlack)
+                        .foregroundColor(.fafTextPrimary)
 
                     if isActive {
                         Text("Active")
@@ -169,7 +173,7 @@ struct MealPlanRowCard: View {
             FAFIcon(.forward, size: 16, color: .fafGray)
         }
         .padding(FAFSpacing.md)
-        .background(Color.fafOffWhite)
+        .background(Color.fafCardBackground)
         .cornerRadius(FAFRadius.md)
         .padding(.horizontal, FAFSpacing.lg)
     }
@@ -189,7 +193,7 @@ struct EmptyMealPlansView: View {
 
                 Text("No Meal Plans Yet")
                     .font(FAFTypography.h2)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
 
                 Text("Plan your meals for the week\nand never wonder what's for dinner")
                     .font(FAFTypography.body)
@@ -250,7 +254,7 @@ struct MealPlansLoadingView: View {
                         Spacer()
                     }
                     .padding(FAFSpacing.md)
-                    .background(Color.fafOffWhite)
+                    .background(Color.fafCardBackground)
                     .cornerRadius(FAFRadius.md)
                     .padding(.horizontal, FAFSpacing.lg)
                 }

@@ -41,7 +41,7 @@ struct ActivityCard: View {
                     .foregroundColor(.fafGrayLight)
             }
             .padding(FAFSpacing.md)
-            .background(Color.fafOffWhite)
+            .background(Color.fafCardBackground)
             .cornerRadius(FAFRadius.md)
         }
         .buttonStyle(.plain)
@@ -103,7 +103,7 @@ struct ActivityAuthorHeader: View {
             VStack(alignment: .leading, spacing: FAFSpacing.xxxs) {
                 Text("@\(activity.authorUsername ?? "unknown")")
                     .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafBlack)
+                    .foregroundColor(.fafTextPrimary)
 
                 Text(activity.type.actionDescription)
                     .font(FAFTypography.caption)
@@ -145,13 +145,13 @@ struct CommentActivityCard: View {
                 if let title = activity.contentTitle {
                     Text(title)
                         .font(FAFTypography.bodyBold)
-                        .foregroundColor(.fafBlack)
+                        .foregroundColor(.fafTextPrimary)
                         .lineLimit(1)
                 }
             }
         }
         .padding(FAFSpacing.sm)
-        .background(Color.fafWhite)
+        .background(Color.fafBackgroundTertiary)
         .cornerRadius(FAFRadius.sm)
     }
 }
@@ -177,7 +177,7 @@ struct LikeActivityCard: View {
                 if let title = activity.contentTitle {
                     Text(title)
                         .font(FAFTypography.body)
-                        .foregroundColor(.fafBlack)
+                        .foregroundColor(.fafTextPrimary)
                         .lineLimit(1)
                 }
             }
@@ -185,7 +185,7 @@ struct LikeActivityCard: View {
             Spacer()
         }
         .padding(FAFSpacing.sm)
-        .background(Color.fafWhite)
+        .background(Color.fafBackgroundTertiary)
         .cornerRadius(FAFRadius.sm)
     }
 }
@@ -211,5 +211,5 @@ struct LikeActivityCard: View {
         }
         .padding()
     }
-    .background(Color.fafWhite)
+    .background(Color.fafBackground)
 }
