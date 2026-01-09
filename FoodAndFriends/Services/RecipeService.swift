@@ -36,6 +36,11 @@ class RecipeService: ObservableObject {
     private let activitiesCollection = "activities"
     private let variationsSubcollection = "variations"
 
+    private var userRecipesListener: ListenerRegistration?
+    private var globalRecipesListener: ListenerRegistration?
+    private var friendsRecipesListeners: [ListenerRegistration] = []
+    private var currentUserId: String?
+
     @Published var userRecipes: [Recipe] = []
     @Published var friendsRecipes: [Recipe] = []
     @Published var globalRecipes: [Recipe] = []
@@ -43,6 +48,106 @@ class RecipeService: ObservableObject {
     @Published var needsRefresh = false
 
     private init() {}
+
+    // MARK: - Realtime Listeners
+
+    func startListening(userId: String) {
+        stopListening()
+        currentUserId = userId
+
+        // Listen to user's own recipes
+        userRecipesListener = db.collection(recipesCollection)
+            .whereField("authorId", isEqualTo: userId)
+            .order(by: "createdAt", descending: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                if let error = error {
+                    print("Error listening to user recipes: \(error)")
+                    return
+                }
+                self.userRecipes = snapshot?.documents.compactMap { doc in
+                    try? doc.data(as: Recipe.self)
+                } ?? []
+            }
+
+        // Listen to global/public recipes
+        globalRecipesListener = db.collection(recipesCollection)
+            .whereField("isPublic", isEqualTo: true)
+            .order(by: "createdAt", descending: true)
+            .limit(to: 50)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                if let error = error {
+                    print("Error listening to global recipes: \(error)")
+                    return
+                }
+                self.globalRecipes = snapshot?.documents.compactMap { doc in
+                    try? doc.data(as: Recipe.self)
+                } ?? []
+            }
+    }
+
+    func updateFriendsListener(friendIds: [String]) {
+        // Remove existing friends listeners
+        friendsRecipesListeners.forEach { $0.remove() }
+        friendsRecipesListeners.removeAll()
+
+        guard !friendIds.isEmpty else {
+            friendsRecipes = []
+            return
+        }
+
+        // Firestore has a limit of 30 for whereIn, batch if needed
+        let batches = friendIds.chunked(into: 30)
+        var allFriendsRecipes: [[Recipe]] = Array(repeating: [], count: batches.count)
+
+        for (index, batch) in batches.enumerated() {
+            let listener = db.collection(recipesCollection)
+                .whereField("authorId", in: batch)
+                .order(by: "createdAt", descending: true)
+                .limit(to: 50)
+                .addSnapshotListener { [weak self] snapshot, error in
+                    guard let self = self else { return }
+                    if let error = error {
+                        print("Error listening to friends recipes: \(error)")
+                        return
+                    }
+
+                    let recipes = snapshot?.documents.compactMap { doc in
+                        try? doc.data(as: Recipe.self)
+                    } ?? []
+
+                    allFriendsRecipes[index] = recipes
+
+                    // Combine all batches and sort
+                    self.friendsRecipes = allFriendsRecipes
+                        .flatMap { $0 }
+                        .sorted { $0.createdAt > $1.createdAt }
+                }
+            friendsRecipesListeners.append(listener)
+        }
+    }
+
+    func stopListening() {
+        userRecipesListener?.remove()
+        globalRecipesListener?.remove()
+        friendsRecipesListeners.forEach { $0.remove() }
+
+        userRecipesListener = nil
+        globalRecipesListener = nil
+        friendsRecipesListeners.removeAll()
+        currentUserId = nil
+
+        userRecipes = []
+        friendsRecipes = []
+        globalRecipes = []
+        needsRefresh = false
+    }
+
+    // Legacy - for backwards compatibility
+    func clearData() {
+        stopListening()
+    }
 
     // MARK: - Create
 
@@ -241,24 +346,16 @@ class RecipeService: ObservableObject {
 
             try await batch.commit()
 
-            // Delete activities for this recipe:
-            // 1. Original owner's activity (User 1 created it)
-            // 2. Promoted user's variation activity (since variation no longer exists)
+            // Delete only the current user's (recipe owner's) activities for this recipe
+            // We can only delete our own activities due to Firestore security rules
+            // The promoted user's old variation activity will become orphaned but harmless
             let activitiesSnapshot = try await db.collection(activitiesCollection)
                 .whereField("recipeId", isEqualTo: recipeId)
+                .whereField("authorId", isEqualTo: recipe.authorId)
                 .getDocuments()
 
             for doc in activitiesSnapshot.documents {
-                if let activity = try? doc.data(as: Activity.self) {
-                    // Delete old owner's activities
-                    if activity.authorId == recipe.authorId {
-                        try await doc.reference.delete()
-                    }
-                    // Delete promoted user's variation activity (they'll get a new "owner" activity)
-                    else if activity.authorId == topVariation.authorId {
-                        try await doc.reference.delete()
-                    }
-                }
+                try await doc.reference.delete()
             }
 
             // Create single activity for the new owner
@@ -278,9 +375,12 @@ class RecipeService: ObservableObject {
             // No variations - delete the recipe entirely
             try await db.collection(recipesCollection).document(recipeId).delete()
 
-            // Delete associated feed activities
+            // Delete only the current user's activities for this recipe
+            // We can only delete our own activities due to Firestore security rules
+            // Other users' activities referencing this recipe will become orphaned but harmless
             let activitiesSnapshot = try await db.collection(activitiesCollection)
                 .whereField("recipeId", isEqualTo: recipeId)
+                .whereField("authorId", isEqualTo: recipe.authorId)
                 .getDocuments()
 
             for doc in activitiesSnapshot.documents {
