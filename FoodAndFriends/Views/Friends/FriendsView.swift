@@ -59,19 +59,7 @@ struct FriendsView: View {
             .sheet(isPresented: $showAddFriend) {
                 AddFriendView()
             }
-            .task {
-                await loadData()
-            }
-            .refreshable {
-                await loadData()
-            }
         }
-    }
-
-    private func loadData() async {
-        guard let userId = userService.currentUser?.id else { return }
-        await friendService.fetchPendingRequests(for: userId)
-        await friendService.fetchFriends(for: userId)
     }
 }
 

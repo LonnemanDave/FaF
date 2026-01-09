@@ -6,42 +6,30 @@ struct HomeView: View {
     @ObservedObject var mealPlanService = MealPlanService.shared
     @ObservedObject var feedService = FeedService.shared
 
-    @State private var hasLoaded = false
     @State private var selectedRecipe: Recipe?
     @State private var selectedMealPlan: MealPlan?
 
     var body: some View {
         NavigationStack {
-            Group {
-                if !hasLoaded {
-                    // Show loading state until first load completes
-                    VStack {
-                        Spacer()
-                        ProgressView()
-                        Spacer()
-                    }
-                } else {
-                    ScrollView {
-                        VStack(spacing: FAFSpacing.xl) {
-                            // Today's Meals Section
-                            TodaysMealsCard(mealPlans: mealPlanService.userMealPlans)
+            ScrollView {
+                VStack(spacing: FAFSpacing.xl) {
+                    // Today's Meals Section
+                    TodaysMealsCard(mealPlans: mealPlanService.userMealPlans)
 
-                            // Quick Actions
-                            QuickActionsSection()
+                    // Quick Actions
+                    QuickActionsSection()
 
-                            // Recent Activity Preview
-                            RecentActivitySection(
-                                activities: Array(feedService.feedActivities.prefix(3)),
-                                onSelectRecipe: { selectedRecipe = $0 },
-                                onSelectMealPlan: { selectedMealPlan = $0 }
-                            )
+                    // Recent Activity Preview
+                    RecentActivitySection(
+                        activities: Array(feedService.feedActivities.prefix(3)),
+                        onSelectRecipe: { selectedRecipe = $0 },
+                        onSelectMealPlan: { selectedMealPlan = $0 }
+                    )
 
-                            // My Recipes
-                            MyRecipesSection(recipes: recipeService.userRecipes)
-                        }
-                        .padding(.vertical, FAFSpacing.lg)
-                    }
+                    // My Recipes
+                    MyRecipesSection(recipes: recipeService.userRecipes)
                 }
+                .padding(.vertical, FAFSpacing.lg)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.fafBackground.ignoresSafeArea())
@@ -72,28 +60,6 @@ struct HomeView: View {
                     }
                 }
             }
-            .task(id: userService.currentUser?.id) {
-                guard !hasLoaded else { return }
-                await loadData()
-                hasLoaded = true
-            }
-            .refreshable {
-                await loadData()
-            }
-        }
-    }
-
-    private func loadData() async {
-        guard let userId = userService.currentUser?.id else { return }
-
-        async let recipesTask: () = recipeService.fetchUserRecipes(userId: userId)
-        async let mealPlansTask: () = mealPlanService.fetchUserMealPlans(userId: userId)
-
-        _ = await (recipesTask, mealPlansTask)
-
-        // Load feed preview if we have a user
-        if let user = userService.currentUser {
-            await feedService.fetchFeed(for: user)
         }
     }
 }

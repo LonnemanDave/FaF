@@ -5,7 +5,6 @@ struct RecipesView: View {
     @ObservedObject var recipeService = RecipeService.shared
     @ObservedObject var friendService = FriendService.shared
 
-    @State private var hasLoaded = false
     @State private var selectedFilter: RecipeFilter = .mine
     @State private var showCreateRecipe = false
 
@@ -38,7 +37,7 @@ struct RecipesView: View {
                         .padding(.vertical, FAFSpacing.sm)
 
                     Group {
-                        if !hasLoaded || recipeService.isLoading {
+                        if recipeService.isLoading {
                             RecipesLoadingView()
                         } else if displayedRecipes.isEmpty {
                             EmptyRecipesView(filter: selectedFilter, onCreateRecipe: { showCreateRecipe = true })
@@ -68,27 +67,8 @@ struct RecipesView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showCreateRecipe, onDismiss: {
-                Task { await loadRecipes() }
-            }) {
+            .sheet(isPresented: $showCreateRecipe) {
                 CreateRecipeView()
-            }
-            .task {
-                if !hasLoaded {
-                    await loadRecipes()
-                    hasLoaded = true
-                }
-            }
-            .refreshable {
-                await loadRecipes()
-            }
-            .onChange(of: recipeService.needsRefresh) { _, needsRefresh in
-                if needsRefresh {
-                    Task {
-                        await loadRecipes()
-                        recipeService.needsRefresh = false
-                    }
-                }
             }
         }
     }
@@ -116,27 +96,11 @@ struct RecipesView: View {
         }
     }
 
-    private func loadRecipes() async {
-        guard let userId = userService.currentUser?.id else { return }
-
-        if friendService.friends.isEmpty {
-            await friendService.fetchFriends(for: userId)
-        }
-
-        async let userRecipes: () = recipeService.fetchUserRecipes(userId: userId)
-        async let friendsRecipes: () = recipeService.fetchFriendsRecipes(
-            friendIds: friendService.friends.compactMap { $0.id }
-        )
-        async let globalRecipes: () = recipeService.fetchGlobalRecipes()
-
-        _ = await (userRecipes, friendsRecipes, globalRecipes)
-    }
-
     private func seedBeefStew() async {
         guard let user = userService.currentUser else { return }
         do {
             try await recipeService.seedBeefStewRecipe(author: user)
-            await loadRecipes()
+            // Listeners will automatically update the UI
         } catch {
             print("Error seeding beef stew: \(error)")
         }

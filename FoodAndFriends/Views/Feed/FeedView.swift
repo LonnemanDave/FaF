@@ -6,7 +6,6 @@ struct FeedView: View {
     @ObservedObject var friendService = FriendService.shared
 
     @State private var showFriends = false
-    @State private var hasLoaded = false
     @State private var selectedRecipe: Recipe?
     @State private var selectedMealPlan: MealPlan?
 
@@ -14,7 +13,7 @@ struct FeedView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: FAFSpacing.lg) {
-                    if !hasLoaded || feedService.isLoading {
+                    if feedService.isLoading {
                         FeedLoadingView()
                             .padding(.horizontal, FAFSpacing.lg)
                     } else if feedService.feedActivities.isEmpty {
@@ -86,30 +85,7 @@ struct FeedView: View {
                         }
                 }
             }
-            .task {
-                if !hasLoaded {
-                    await loadFeed()
-                    hasLoaded = true
-                }
-            }
-            .refreshable {
-                await loadFeed()
-            }
         }
-    }
-
-    private func loadFeed() async {
-        guard let user = userService.currentUser else { return }
-
-        // Load friends first if needed
-        if friendService.friends.isEmpty {
-            await friendService.fetchFriends(for: user.id ?? "")
-        }
-
-        // Load pending requests for badge
-        await friendService.fetchPendingRequests(for: user.id ?? "")
-
-        await feedService.fetchFeed(for: user)
     }
 }
 

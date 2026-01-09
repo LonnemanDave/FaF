@@ -3,6 +3,7 @@ import FirebaseAuth
 import GoogleSignIn
 import AuthenticationServices
 import CryptoKit
+import Combine
 
 enum AuthState: Equatable {
     case unknown
@@ -51,9 +52,28 @@ class AuthManager: ObservableObject {
 
     private var authStateListener: AuthStateDidChangeListenerHandle?
     private var currentNonce: String?
+    private var friendsSubscription: AnyCancellable?
 
     private init() {
         setupAuthStateListener()
+        setupFriendsSubscription()
+    }
+
+    private func setupFriendsSubscription() {
+        // Watch for friends changes and update dependent listeners
+        friendsSubscription = FriendService.shared.$friends
+            .dropFirst() // Skip initial empty value
+            .sink { [weak self] friends in
+                guard let self = self,
+                      let userId = self.firebaseUser?.uid,
+                      self.authState == .signedIn else { return }
+
+                let friendIds = friends.compactMap { $0.id }
+
+                // Update recipe and feed listeners with new friend IDs
+                RecipeService.shared.updateFriendsListener(friendIds: friendIds)
+                FeedService.shared.updateFeedListener(userId: userId, friendIds: friendIds)
+            }
     }
 
     private func setupAuthStateListener() {
@@ -73,6 +93,8 @@ class AuthManager: ObservableObject {
         do {
             let user = try await UserService.shared.fetchUser(userId: userId)
             if let user = user, user.isProfileComplete {
+                // Start all listeners for the signed-in user
+                startAllListeners(userId: userId)
                 authState = .signedIn
             } else {
                 authState = .needsProfileSetup
@@ -80,6 +102,27 @@ class AuthManager: ObservableObject {
         } catch {
             authState = .needsProfileSetup
         }
+    }
+
+    private func startAllListeners(userId: String) {
+        // Start core listeners
+        UserService.shared.startListening(userId: userId)
+        FriendService.shared.startListening(userId: userId)
+        RecipeService.shared.startListening(userId: userId)
+        MealPlanService.shared.startListening(userId: userId)
+
+        // Feed and friends recipes need friend IDs - will be updated by FriendService listener
+        // Initial empty state, will populate when friends load
+        FeedService.shared.startListening(userId: userId, friendIds: [])
+        RecipeService.shared.updateFriendsListener(friendIds: [])
+    }
+
+    private func stopAllListeners() {
+        UserService.shared.stopListening()
+        FriendService.shared.stopListening()
+        RecipeService.shared.stopListening()
+        MealPlanService.shared.stopListening()
+        FeedService.shared.stopListening()
     }
 
     // MARK: - Email/Password Auth
@@ -202,7 +245,7 @@ class AuthManager: ObservableObject {
         do {
             try Auth.auth().signOut()
             GIDSignIn.sharedInstance.signOut()
-            UserService.shared.clearCurrentUser()
+            stopAllListeners()
             authState = .signedOut
         } catch {
             throw AuthError.signOutFailed

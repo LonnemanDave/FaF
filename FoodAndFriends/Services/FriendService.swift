@@ -32,11 +32,129 @@ class FriendService: ObservableObject {
     private let usersCollection = "users"
     private let friendRequestsCollection = "friendRequests"
 
+    private var pendingRequestsListener: ListenerRegistration?
+    private var sentRequestsListener: ListenerRegistration?
+    private var friendsListener: ListenerRegistration?
+    private var currentUserId: String?
+
     @Published var friends: [FAFUser] = []
     @Published var pendingRequests: [FriendRequest] = []
     @Published var sentRequests: [FriendRequest] = []
 
     private init() {}
+
+    // MARK: - Realtime Listeners
+
+    func startListening(userId: String) {
+        stopListening()
+        currentUserId = userId
+
+        // Listen for pending requests (incoming)
+        pendingRequestsListener = db.collection(friendRequestsCollection)
+            .whereField("toUserId", isEqualTo: userId)
+            .whereField("status", isEqualTo: FriendRequestStatus.pending.rawValue)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                if let error = error {
+                    print("Error listening to pending requests: \(error)")
+                    return
+                }
+                Task { await self.processPendingRequests(snapshot) }
+            }
+
+        // Listen for sent requests (outgoing)
+        sentRequestsListener = db.collection(friendRequestsCollection)
+            .whereField("fromUserId", isEqualTo: userId)
+            .whereField("status", isEqualTo: FriendRequestStatus.pending.rawValue)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                if let error = error {
+                    print("Error listening to sent requests: \(error)")
+                    return
+                }
+                Task { await self.processSentRequests(snapshot) }
+            }
+
+        // Listen to user document for friends array changes
+        friendsListener = db.collection(usersCollection).document(userId)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                if let error = error {
+                    print("Error listening to friends: \(error)")
+                    return
+                }
+                Task { await self.processFriendsUpdate(snapshot) }
+            }
+    }
+
+    func stopListening() {
+        pendingRequestsListener?.remove()
+        sentRequestsListener?.remove()
+        friendsListener?.remove()
+        pendingRequestsListener = nil
+        sentRequestsListener = nil
+        friendsListener = nil
+        currentUserId = nil
+        friends = []
+        pendingRequests = []
+        sentRequests = []
+    }
+
+    private func processPendingRequests(_ snapshot: QuerySnapshot?) async {
+        guard let documents = snapshot?.documents else { return }
+
+        var requests = documents.compactMap { doc in
+            try? doc.data(as: FriendRequest.self)
+        }
+
+        // Fetch usernames for each request
+        for i in requests.indices {
+            if let user = try? await fetchUser(userId: requests[i].fromUserId) {
+                requests[i].fromUsername = user.username
+            }
+        }
+
+        self.pendingRequests = requests
+    }
+
+    private func processSentRequests(_ snapshot: QuerySnapshot?) async {
+        guard let documents = snapshot?.documents else { return }
+
+        var requests = documents.compactMap { doc in
+            try? doc.data(as: FriendRequest.self)
+        }
+
+        // Fetch usernames for each request
+        for i in requests.indices {
+            if let user = try? await fetchUser(userId: requests[i].toUserId) {
+                requests[i].toUsername = user.username
+            }
+        }
+
+        self.sentRequests = requests
+    }
+
+    private func processFriendsUpdate(_ snapshot: DocumentSnapshot?) async {
+        guard let snapshot = snapshot,
+              let user = try? snapshot.data(as: FAFUser.self) else {
+            self.friends = []
+            return
+        }
+
+        var friendsList: [FAFUser] = []
+        for friendId in user.friends {
+            if let friend = try? await fetchUser(userId: friendId) {
+                friendsList.append(friend)
+            }
+        }
+
+        self.friends = friendsList
+    }
+
+    // Legacy - for backwards compatibility
+    func clearData() {
+        stopListening()
+    }
 
     // MARK: - Search Users
 

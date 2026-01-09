@@ -29,10 +29,41 @@ class MealPlanService: ObservableObject {
     private let mealPlansCollection = "mealPlans"
     private let activitiesCollection = "activities"
 
+    private var mealPlansListener: ListenerRegistration?
+    private var currentUserId: String?
+
     @Published var userMealPlans: [MealPlan] = []
     @Published var isLoading = false
 
     private init() {}
+
+    // MARK: - Realtime Listeners
+
+    func startListening(userId: String) {
+        stopListening()
+        currentUserId = userId
+
+        mealPlansListener = db.collection(mealPlansCollection)
+            .whereField("authorId", isEqualTo: userId)
+            .order(by: "createdAt", descending: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                if let error = error {
+                    print("Error listening to meal plans: \(error)")
+                    return
+                }
+                self.userMealPlans = snapshot?.documents.compactMap { doc in
+                    try? doc.data(as: MealPlan.self)
+                } ?? []
+            }
+    }
+
+    func stopListening() {
+        mealPlansListener?.remove()
+        mealPlansListener = nil
+        currentUserId = nil
+        userMealPlans = []
+    }
 
     // MARK: - Create
 

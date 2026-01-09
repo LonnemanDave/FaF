@@ -27,10 +27,44 @@ class UserService: ObservableObject {
 
     private let db = Firestore.firestore()
     private let usersCollection = "users"
+    private var userListener: ListenerRegistration?
 
     @Published var currentUser: FAFUser?
 
     private init() {}
+
+    // MARK: - Realtime Listeners
+
+    func startListening(userId: String) {
+        stopListening()
+
+        userListener = db.collection(usersCollection).document(userId)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+
+                if let error = error {
+                    print("Error listening to user: \(error)")
+                    return
+                }
+
+                guard let snapshot = snapshot, snapshot.exists else {
+                    self.currentUser = nil
+                    return
+                }
+
+                do {
+                    self.currentUser = try snapshot.data(as: FAFUser.self)
+                } catch {
+                    print("Error decoding user: \(error)")
+                }
+            }
+    }
+
+    func stopListening() {
+        userListener?.remove()
+        userListener = nil
+        currentUser = nil
+    }
 
     // MARK: - Username Validation
 
@@ -120,7 +154,8 @@ class UserService: ObservableObject {
         }
     }
 
+    // Legacy - use stopListening() instead
     func clearCurrentUser() {
-        currentUser = nil
+        stopListening()
     }
 }

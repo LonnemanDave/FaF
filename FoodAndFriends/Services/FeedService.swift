@@ -23,6 +23,9 @@ class FeedService: ObservableObject {
     private let activitiesCollection = "activities"
     private let usersCollection = "users"
 
+    private var feedListeners: [ListenerRegistration] = []
+    private var currentUserId: String?
+
     @Published var feedActivities: [Activity] = []
     @Published var isLoading = false
 
@@ -31,97 +34,78 @@ class FeedService: ObservableObject {
 
     private init() {}
 
-    // MARK: - Feed Fetching
+    // MARK: - Realtime Listeners
 
-    func fetchFeed(for user: FAFUser, limit: Int = 50) async {
-        guard let userId = user.id else { return }
-
-        isLoading = true
-        defer { isLoading = false }
+    func startListening(userId: String, friendIds: [String]) {
+        stopListening()
+        currentUserId = userId
 
         // Include user's own activities plus friends
-        let allUserIds = user.friends + [userId]
+        let allUserIds = friendIds + [userId]
 
         guard !allUserIds.isEmpty else {
             feedActivities = []
             return
         }
 
-        do {
-            // Fetch fresh user data for enriching activities
-            await fetchUsers(ids: allUserIds)
+        // Batch into groups of 30 (Firestore whereIn limit)
+        let batches = allUserIds.chunked(into: 30)
+        var allActivities: [[Activity]] = Array(repeating: [], count: batches.count)
 
-            // Batch into groups of 30 (Firestore whereIn limit)
-            let batches = allUserIds.chunked(into: 30)
-            var allActivities: [Activity] = []
+        for (index, batch) in batches.enumerated() {
+            let listener = db.collection(activitiesCollection)
+                .whereField("authorId", in: batch)
+                .order(by: "createdAt", descending: true)
+                .limit(to: 50)
+                .addSnapshotListener { [weak self] snapshot, error in
+                    guard let self = self else { return }
+                    if let error = error {
+                        print("Error listening to feed: \(error)")
+                        return
+                    }
 
-            for batch in batches {
-                let snapshot = try await db.collection(activitiesCollection)
-                    .whereField("authorId", in: batch)
-                    .order(by: "createdAt", descending: true)
-                    .limit(to: limit)
-                    .getDocuments()
+                    let activities = snapshot?.documents.compactMap { doc in
+                        try? doc.data(as: Activity.self)
+                    } ?? []
 
-                let activities = snapshot.documents.compactMap { doc in
-                    try? doc.data(as: Activity.self)
+                    allActivities[index] = activities
+
+                    // Combine all batches and sort
+                    self.feedActivities = allActivities
+                        .flatMap { $0 }
+                        .sorted { $0.createdAt > $1.createdAt }
                 }
-                allActivities.append(contentsOf: activities)
-            }
-
-            // Enrich activities with fresh user data
-            let enrichedActivities = allActivities.map { activity -> Activity in
-                var enriched = activity
-                if let cachedUser = userCache[activity.authorId] {
-                    enriched.authorUsername = cachedUser.username
-                    enriched.authorProfileImageURL = cachedUser.profileImageURL
-                }
-                return enriched
-            }
-
-            // Sort merged results and limit
-            feedActivities = Array(
-                enrichedActivities
-                    .sorted { $0.createdAt > $1.createdAt }
-                    .prefix(limit)
-            )
-        } catch {
-            print("Error fetching feed: \(error)")
-            feedActivities = []
+            feedListeners.append(listener)
         }
     }
 
-    private func fetchUsers(ids: [String]) async {
-        // Only fetch users we don't have cached
-        let uncachedIds = ids.filter { userCache[$0] == nil }
-        guard !uncachedIds.isEmpty else { return }
+    func updateFeedListener(userId: String, friendIds: [String]) {
+        startListening(userId: userId, friendIds: friendIds)
+    }
 
-        do {
-            let batches = uncachedIds.chunked(into: 30)
-            for batch in batches {
-                let snapshot = try await db.collection(usersCollection)
-                    .whereField(FieldPath.documentID(), in: batch)
-                    .getDocuments()
+    func stopListening() {
+        feedListeners.forEach { $0.remove() }
+        feedListeners.removeAll()
+        currentUserId = nil
+        feedActivities = []
+        userCache.removeAll()
+    }
 
-                for doc in snapshot.documents {
-                    if let user = try? doc.data(as: FAFUser.self) {
-                        userCache[doc.documentID] = user
-                    }
-                }
-            }
-        } catch {
-            print("Error fetching users for feed: \(error)")
-        }
+    // Legacy methods for backwards compatibility
+    func fetchFeed(for user: FAFUser, limit: Int = 50) async {
+        // Now handled by listeners, but keep for manual refresh
+        guard let userId = user.id else { return }
+        startListening(userId: userId, friendIds: user.friends)
     }
 
     func refreshFeed(for user: FAFUser) async {
-        // Clear cache on refresh to get fresh user data
+        guard let userId = user.id else { return }
         userCache.removeAll()
-        await fetchFeed(for: user)
+        startListening(userId: userId, friendIds: user.friends)
     }
 
     func clearCache() {
-        feedActivities.removeAll()
-        userCache.removeAll()
+        stopListening()
     }
 
     // MARK: - Activity Creation Helpers

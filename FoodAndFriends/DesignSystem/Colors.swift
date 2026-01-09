@@ -50,22 +50,22 @@ extension Color {
     /// Off-white - softer background alternative
     static let fafOffWhite = Color(hex: "FAFAFA")
 
-    // MARK: - Grays
+    // MARK: - Grays (Adaptive)
 
-    /// Dark gray - secondary text
-    static let fafGrayDark = Color(hex: "333333")
+    /// Dark gray - secondary text (adapts to light gray in dark mode)
+    static let fafGrayDark = Color(light: Color(hex: "333333"), dark: Color(hex: "CCCCCC"))
 
-    /// Medium gray - tertiary text, borders
-    static let fafGray = Color(hex: "666666")
+    /// Medium gray - tertiary text, borders (adapts in dark mode)
+    static let fafGray = Color(light: Color(hex: "666666"), dark: Color(hex: "A0A0A0"))
 
-    /// Light gray - subtle borders, disabled states
-    static let fafGrayLight = Color(hex: "999999")
+    /// Light gray - subtle borders, disabled states (adapts in dark mode)
+    static let fafGrayLight = Color(light: Color(hex: "999999"), dark: Color(hex: "8E8E93"))
 
-    /// Extra light gray - backgrounds, dividers
-    static let fafGrayXLight = Color(hex: "E5E5E5")
+    /// Extra light gray - backgrounds, dividers (adapts in dark mode)
+    static let fafGrayXLight = Color(light: Color(hex: "E5E5E5"), dark: Color(hex: "3A3A3C"))
 
-    /// Near white gray - subtle backgrounds
-    static let fafGrayXXLight = Color(hex: "F5F5F5")
+    /// Near white gray - subtle backgrounds (adapts in dark mode)
+    static let fafGrayXXLight = Color(light: Color(hex: "F5F5F5"), dark: Color(hex: "2C2C2E"))
 
     // MARK: - Accent Colors (Food-Inspired)
     // These remain consistent across light/dark for brand identity

@@ -28,12 +28,12 @@ struct FAFSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(FAFTypography.button)
-            .foregroundColor(isEnabled ? .fafBlack : .fafGrayLight)
+            .foregroundColor(isEnabled ? .fafTextPrimary : .fafGrayLight)
             .background(Color.clear)
             .cornerRadius(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(isEnabled ? Color.fafBlack : Color.fafGrayLight, lineWidth: 1.5)
+                    .stroke(isEnabled ? Color.fafTextPrimary : Color.fafGrayLight, lineWidth: 1.5)
             )
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .opacity(configuration.isPressed ? 0.7 : 1.0)
@@ -66,7 +66,7 @@ struct FAFGhostButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(FAFTypography.button)
-            .foregroundColor(isEnabled ? .fafBlack : .fafGrayLight)
+            .foregroundColor(isEnabled ? .fafTextPrimary : .fafGrayLight)
             .opacity(configuration.isPressed ? 0.5 : 1.0)
             .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
     }
@@ -174,7 +174,7 @@ struct FAFButton: View {
         case .primary, .accent:
             return .fafWhite
         case .secondary, .ghost:
-            return .fafBlack
+            return .fafTextPrimary
         }
     }
 }
