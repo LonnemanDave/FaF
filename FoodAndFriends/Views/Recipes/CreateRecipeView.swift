@@ -9,7 +9,11 @@ struct CreateRecipeView: View {
     // Edit mode
     var recipeToEdit: Recipe?
     var onDelete: (() -> Void)?
-    var isEditing: Bool { recipeToEdit != nil }
+    var isEditing: Bool { recipeToEdit != nil && recipeToEdit?.id != nil }
+
+    // AI Draft mode - pre-populated but creates new recipe
+    var aiDraftRecipe: Recipe?
+    var isAIDraft: Bool { aiDraftRecipe != nil }
 
     // Variation mode
     var baseRecipeForVariation: Recipe?
@@ -139,6 +143,8 @@ struct CreateRecipeView: View {
             .onAppear {
                 if let recipe = recipeToEdit {
                     populateFields(from: recipe)
+                } else if let draft = aiDraftRecipe {
+                    populateFields(from: draft)
                 } else if let variation = variationToEdit {
                     populateFieldsFromVariation(variation)
                 } else if let baseRecipe = baseRecipeForVariation {
@@ -155,6 +161,8 @@ struct CreateRecipeView: View {
             return "Your Variation"
         } else if isEditing {
             return "Edit Recipe"
+        } else if isAIDraft {
+            return "AI Generated Recipe"
         } else {
             return "New Recipe"
         }

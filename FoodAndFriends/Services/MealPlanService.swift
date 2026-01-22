@@ -177,7 +177,22 @@ class MealPlanService: ObservableObject {
             throw MealPlanServiceError.mealPlanNotFound
         }
 
+        // Delete the meal plan
         try await db.collection(mealPlansCollection).document(mealPlanId).delete()
+
+        // Delete associated activities (only the current user's activities)
+        let activitiesSnapshot = try await db.collection(activitiesCollection)
+            .whereField("mealPlanId", isEqualTo: mealPlanId)
+            .whereField("authorId", isEqualTo: mealPlan.authorId)
+            .getDocuments()
+
+        for doc in activitiesSnapshot.documents {
+            try await doc.reference.delete()
+        }
+
         userMealPlans.removeAll { $0.id == mealPlanId }
+
+        // Clear feed cache so activities refresh
+        FeedService.shared.clearCache()
     }
 }

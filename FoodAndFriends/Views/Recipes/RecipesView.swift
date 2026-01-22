@@ -4,9 +4,11 @@ struct RecipesView: View {
     @ObservedObject var userService = UserService.shared
     @ObservedObject var recipeService = RecipeService.shared
     @ObservedObject var friendService = FriendService.shared
+    @ObservedObject var aiService = AIService.shared
 
     @State private var selectedFilter: RecipeFilter = .mine
     @State private var showCreateRecipe = false
+    @State private var showAIGenerator = false
 
     enum RecipeFilter: String, CaseIterable {
         case global = "Global"
@@ -60,15 +62,29 @@ struct RecipesView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showCreateRecipe = true
-                    } label: {
-                        FAFIcon(.plus, size: 20, color: .fafCoral)
+                    HStack(spacing: FAFSpacing.md) {
+                        if aiService.hasValidAPIKey {
+                            Button {
+                                showAIGenerator = true
+                            } label: {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.fafSage)
+                            }
+                        }
+                        Button {
+                            showCreateRecipe = true
+                        } label: {
+                            FAFIcon(.plus, size: 20, color: .fafCoral)
+                        }
                     }
                 }
             }
             .sheet(isPresented: $showCreateRecipe) {
                 CreateRecipeView()
+            }
+            .sheet(isPresented: $showAIGenerator) {
+                AIRecipeGeneratorView()
             }
         }
     }

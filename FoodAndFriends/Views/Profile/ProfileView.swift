@@ -4,11 +4,13 @@ struct ProfileView: View {
     @ObservedObject var authManager = AuthManager.shared
     @ObservedObject var userService = UserService.shared
     @ObservedObject var appearanceManager = AppearanceManager.shared
+    @ObservedObject var aiService = AIService.shared
 
     @State private var selectedImage: UIImage?
     @State private var isUploading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var showAISettings = false
 
     var body: some View {
         NavigationStack {
@@ -50,6 +52,9 @@ struct ProfileView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
+            }
+            .sheet(isPresented: $showAISettings) {
+                AISettingsView()
             }
         }
     }
@@ -190,6 +195,9 @@ struct ProfileView: View {
                 ]
             )
 
+            // AI Assistant Section
+            aiAssistantSection
+
             // Appearance Section
             appearanceSection
 
@@ -201,6 +209,56 @@ struct ProfileView: View {
                 ]
             )
         }
+    }
+
+    // MARK: - AI Assistant Section
+
+    private var aiAssistantSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("AI Assistant")
+                .font(FAFTypography.labelLarge)
+                .foregroundColor(.fafGray)
+                .padding(.horizontal, FAFSpacing.md)
+                .padding(.top, FAFSpacing.md)
+                .padding(.bottom, FAFSpacing.xs)
+
+            Button {
+                showAISettings = true
+            } label: {
+                HStack(spacing: FAFSpacing.md) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 20))
+                        .foregroundColor(aiService.hasValidAPIKey ? .fafSage : .fafGrayDark)
+                        .frame(width: 24)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Claude API Key")
+                            .font(FAFTypography.body)
+                            .foregroundColor(.fafTextPrimary)
+
+                        Text(aiService.hasValidAPIKey ? "Configured" : "Not configured")
+                            .font(FAFTypography.caption)
+                            .foregroundColor(aiService.hasValidAPIKey ? .fafSage : .fafGray)
+                    }
+
+                    Spacer()
+
+                    if aiService.hasValidAPIKey {
+                        Circle()
+                            .fill(Color.fafSage)
+                            .frame(width: 8, height: 8)
+                    }
+
+                    FAFIcon(.forward, size: 14, color: .fafGrayLight)
+                }
+                .padding(.horizontal, FAFSpacing.md)
+                .padding(.vertical, FAFSpacing.sm)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .background(Color.fafCardBackground)
+        .cornerRadius(FAFRadius.md)
     }
 
     // MARK: - Appearance Section

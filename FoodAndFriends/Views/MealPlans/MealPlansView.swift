@@ -3,8 +3,12 @@ import SwiftUI
 struct MealPlansView: View {
     @ObservedObject var userService = UserService.shared
     @ObservedObject var mealPlanService = MealPlanService.shared
+    @ObservedObject var aiService = AIService.shared
 
     @State private var hasLoaded = false
+    @State private var showAIMealPlanGenerator = false
+    @State private var showManualMealPlanCreator = false
+    @State private var showCreateOptions = false
 
     var body: some View {
         NavigationStack {
@@ -16,7 +20,7 @@ struct MealPlansView: View {
                     if !hasLoaded || mealPlanService.isLoading {
                         MealPlansLoadingView()
                     } else if mealPlanService.userMealPlans.isEmpty {
-                        EmptyMealPlansView()
+                        EmptyMealPlansView(onCreateMealPlan: { showCreateOptions = true })
                     } else {
                         MealPlansList(mealPlans: mealPlanService.userMealPlans)
                     }
@@ -27,11 +31,33 @@ struct MealPlansView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
-                        // TODO: Navigate to create meal plan
+                        showCreateOptions = true
                     } label: {
                         FAFIcon(.plus, size: 20, color: .fafCoral)
                     }
                 }
+            }
+            .confirmationDialog("Create Meal Plan", isPresented: $showCreateOptions, titleVisibility: .visible) {
+                if aiService.hasValidAPIKey {
+                    Button {
+                        showAIMealPlanGenerator = true
+                    } label: {
+                        Label("Generate with AI", systemImage: "sparkles")
+                    }
+                }
+                Button {
+                    showManualMealPlanCreator = true
+                } label: {
+                    Label("Create Manually", systemImage: "pencil")
+                }
+            } message: {
+                Text("How would you like to create your meal plan?")
+            }
+            .sheet(isPresented: $showAIMealPlanGenerator) {
+                AIMealPlanGeneratorView()
+            }
+            .sheet(isPresented: $showManualMealPlanCreator) {
+                ManualMealPlanCreatorView()
             }
             .task {
                 if !hasLoaded {
@@ -126,62 +152,67 @@ struct MealPlanRowCard: View {
     }
 
     var body: some View {
-        HStack(spacing: FAFSpacing.md) {
-            // Calendar icon with active indicator
-            ZStack {
-                RoundedRectangle(cornerRadius: FAFRadius.sm)
-                    .fill(isActive ? Color.fafCoral.opacity(0.1) : Color.fafGrayXLight)
-                    .frame(width: 60, height: 60)
+        NavigationLink(destination: MealPlanDetailView(mealPlan: mealPlan)) {
+            HStack(spacing: FAFSpacing.md) {
+                // Calendar icon with active indicator
+                ZStack {
+                    RoundedRectangle(cornerRadius: FAFRadius.sm)
+                        .fill(isActive ? Color.fafCoral.opacity(0.1) : Color.fafGrayXLight)
+                        .frame(width: 60, height: 60)
 
-                FAFIcon(.calendar, size: 24, color: isActive ? .fafCoral : .fafGray)
-            }
+                    FAFIcon(.calendar, size: 24, color: isActive ? .fafCoral : .fafGray)
+                }
 
-            VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                HStack {
-                    Text(mealPlan.name)
-                        .font(FAFTypography.bodyBold)
-                        .foregroundColor(.fafTextPrimary)
+                VStack(alignment: .leading, spacing: FAFSpacing.xs) {
+                    HStack {
+                        Text(mealPlan.name)
+                            .font(FAFTypography.bodyBold)
+                            .foregroundColor(.fafTextPrimary)
 
-                    if isActive {
-                        Text("Active")
+                        if isActive {
+                            Text("Active")
+                                .font(FAFTypography.caption)
+                                .foregroundColor(.fafWhite)
+                                .padding(.horizontal, FAFSpacing.xs)
+                                .padding(.vertical, 2)
+                                .background(Color.fafCoral)
+                                .cornerRadius(4)
+                        }
+                    }
+
+                    Text(dateRangeText)
+                        .font(FAFTypography.caption)
+                        .foregroundColor(.fafGray)
+
+                    HStack(spacing: FAFSpacing.md) {
+                        Label("\(mealPlan.numberOfDays) days", systemImage: "calendar")
                             .font(FAFTypography.caption)
-                            .foregroundColor(.fafWhite)
-                            .padding(.horizontal, FAFSpacing.xs)
-                            .padding(.vertical, 2)
-                            .background(Color.fafCoral)
-                            .cornerRadius(4)
+                            .foregroundColor(.fafGray)
+
+                        Label("\(mealPlan.totalMeals) meals", systemImage: "fork.knife")
+                            .font(FAFTypography.caption)
+                            .foregroundColor(.fafGray)
                     }
                 }
 
-                Text(dateRangeText)
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
+                Spacer()
 
-                HStack(spacing: FAFSpacing.md) {
-                    Label("\(mealPlan.numberOfDays) days", systemImage: "calendar")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-
-                    Label("\(mealPlan.totalMeals) meals", systemImage: "fork.knife")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-                }
+                FAFIcon(.forward, size: 16, color: .fafGray)
             }
-
-            Spacer()
-
-            FAFIcon(.forward, size: 16, color: .fafGray)
+            .padding(FAFSpacing.md)
+            .background(Color.fafCardBackground)
+            .cornerRadius(FAFRadius.md)
+            .padding(.horizontal, FAFSpacing.lg)
         }
-        .padding(FAFSpacing.md)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
-        .padding(.horizontal, FAFSpacing.lg)
+        .buttonStyle(.plain)
     }
 }
 
 // MARK: - Empty State
 
 struct EmptyMealPlansView: View {
+    var onCreateMealPlan: (() -> Void)? = nil
+
     var body: some View {
         VStack(spacing: FAFSpacing.lg) {
             Spacer()
@@ -202,7 +233,7 @@ struct EmptyMealPlansView: View {
             }
 
             Button {
-                // TODO: Navigate to create meal plan
+                onCreateMealPlan?()
             } label: {
                 HStack(spacing: FAFSpacing.sm) {
                     FAFIcon(.plus, size: 16, color: .fafWhite)
