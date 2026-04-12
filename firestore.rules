@@ -1,0 +1,83 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidString(field, minLen, maxLen) {
+      return field is string && field.size() >= minLen && field.size() <= maxLen;
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId)
+        && isValidString(request.resource.data.username, 3, 20)
+        && isValidString(request.resource.data.email, 5, 254);
+      allow delete: if isOwner(userId);
+      // Allow update if:
+      // 1. It's the user's own document, OR
+      // 2. Only the friends array and updatedAt are being changed (for friend accept/remove)
+      //    AND the change only adds/removes the requesting user's own ID
+      allow update: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends', 'updatedAt'])
+          && (
+            // Only allow adding or removing the requester's own UID
+            request.resource.data.friends.toSet().difference(resource.data.friends.toSet()).hasOnly([request.auth.uid])
+            && resource.data.friends.toSet().difference(request.resource.data.friends.toSet()).hasOnly([request.auth.uid])
+          )
+        )
+      );
+    }
+
+    match /friendRequests/{requestId} {
+      allow read: if isAuthenticated();
+      // Only the sender can create, and fromUserId must match their auth UID
+      allow create: if isAuthenticated()
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.fromUserId != request.resource.data.toUserId;
+      // Only sender or recipient can update/delete
+      allow update: if isAuthenticated() &&
+        (resource.data.fromUserId == request.auth.uid ||
+         resource.data.toUserId == request.auth.uid);
+      allow delete: if isAuthenticated() &&
+        (resource.data.fromUserId == request.auth.uid ||
+         resource.data.toUserId == request.auth.uid);
+    }
+
+    match /recipes/{recipeId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.authorId == request.auth.uid
+        && isValidString(request.resource.data.title, 1, 200);
+      allow update, delete: if isAuthenticated() &&
+        resource.data.authorId == request.auth.uid;
+    }
+
+    match /mealPlans/{mealPlanId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.authorId == request.auth.uid
+        && isValidString(request.resource.data.name, 1, 200);
+      allow update, delete: if isAuthenticated() &&
+        resource.data.authorId == request.auth.uid;
+    }
+
+    match /activities/{activityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isAuthenticated() &&
+        resource.data.authorId == request.auth.uid;
+    }
+  }
+}
