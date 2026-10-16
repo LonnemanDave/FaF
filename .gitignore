@@ -13,3 +13,11 @@ DerivedData/
 
 # CocoaPods
 Pods/
+# Cloud Functions
+functions/node_modules/
+functions/lib/
+.firebase/
+
+# Rules tests
+tests/rules/node_modules/
+firestore-debug.log

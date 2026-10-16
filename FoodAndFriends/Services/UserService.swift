@@ -1,0 +1,191 @@
+import Foundation
+import FirebaseFirestore
+import FirebaseFunctions
+
+enum UserServiceError: LocalizedError {
+    case usernameTaken
+    case userNotFound
+    case invalidUsername
+    case firestoreError(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .usernameTaken:
+            return "This username is already taken"
+        case .userNotFound:
+            return "User not found"
+        case .invalidUsername:
+            return "Username must be 3-20 characters and contain only letters, numbers, and underscores"
+        case .firestoreError(let error):
+            return error.localizedDescription
+        }
+    }
+}
+
+@MainActor
+class UserService: ObservableObject {
+    static let shared = UserService()
+
+    private let db = Firestore.firestore()
+    private let usersCollection = "users"
+    private var userListener: ListenerRegistration?
+
+    @Published var currentUser: FAFUser?
+
+    private init() {}
+
+    // MARK: - Realtime Listeners
+
+    func startListening(userId: String) {
+        stopListening()
+
+        userListener = db.collection(usersCollection).document(userId)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+
+                if let error = error {
+                    print("Error listening to user: \(error)")
+                    return
+                }
+
+                guard let snapshot = snapshot, snapshot.exists else {
+                    self.currentUser = nil
+                    return
+                }
+
+                do {
+                    self.currentUser = try snapshot.data(as: FAFUser.self)
+                } catch {
+                    print("Error decoding user: \(error)")
+                }
+            }
+    }
+
+    func stopListening() {
+        userListener?.remove()
+        userListener = nil
+        currentUser = nil
+    }
+
+    // MARK: - Username Validation
+
+    func isValidUsername(_ username: String) -> Bool {
+        let usernameRegex = "^[a-zA-Z0-9_]{3,20}$"
+        return username.range(of: usernameRegex, options: .regularExpression) != nil
+    }
+
+    func isUsernameAvailable(_ username: String) async throws -> Bool {
+        let lowercasedUsername = username.lowercased()
+        let snapshot = try await db.collection(usersCollection)
+            .whereField("username", isEqualTo: lowercasedUsername)
+            .limit(to: 1)
+            .getDocuments()
+        return snapshot.documents.isEmpty
+    }
+
+    // MARK: - User CRUD
+
+    func createUser(userId: String, email: String, username: String, location: String) async throws {
+        let lowercasedUsername = username.lowercased()
+
+        guard isValidUsername(username) else {
+            throw UserServiceError.invalidUsername
+        }
+
+        guard try await isUsernameAvailable(username) else {
+            throw UserServiceError.usernameTaken
+        }
+
+        let user = FAFUser(
+            email: email,
+            username: lowercasedUsername,
+            displayName: nil,
+            location: location,
+            profileImageURL: nil,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+
+        let userRef = db.collection(usersCollection).document(userId)
+        try userRef.setData(from: user)
+
+        // Fetch the user to get the document with proper @DocumentID
+        _ = try await fetchUser(userId: userId)
+    }
+
+    func fetchUser(userId: String) async throws -> FAFUser? {
+        let doc = try await db.collection(usersCollection).document(userId).getDocument()
+
+        guard doc.exists else { return nil }
+
+        let user = try doc.data(as: FAFUser.self)
+        self.currentUser = user
+        return user
+    }
+
+    func updateUser(_ user: FAFUser) async throws {
+        guard let userId = user.id else {
+            throw UserServiceError.userNotFound
+        }
+
+        var updatedUser = user
+        updatedUser.updatedAt = Date()
+
+        try db.collection(usersCollection).document(userId).setData(from: updatedUser, merge: true)
+        self.currentUser = updatedUser
+    }
+
+    func updateUsername(userId: String, newUsername: String) async throws {
+        let lowercasedNew = newUsername.lowercased()
+
+        guard isValidUsername(newUsername) else {
+            throw UserServiceError.invalidUsername
+        }
+
+        guard try await isUsernameAvailable(newUsername) else {
+            throw UserServiceError.usernameTaken
+        }
+
+        let userRef = db.collection(usersCollection).document(userId)
+        try await userRef.updateData(["username": lowercasedNew, "updatedAt": Date()])
+
+        if var user = currentUser {
+            user.username = lowercasedNew
+            self.currentUser = user
+        }
+    }
+
+    // Legacy - use stopListening() instead
+    /// Remembers which Kroger store to shop at.
+    func setKrogerStore(id: String, name: String) async throws {
+        guard let userId = currentUser?.id else { throw UserServiceError.userNotFound }
+        currentUser?.krogerLocationId = id
+        currentUser?.krogerStoreName = name
+        #if DEBUG
+        if DesignHarness.isOn { return }
+        #endif
+        try await db.collection(usersCollection).document(userId).updateData([
+            "krogerLocationId": id,
+            "krogerStoreName": name,
+            "updatedAt": Date(),
+        ])
+    }
+
+    func clearCurrentUser() {
+        stopListening()
+    }
+
+    // MARK: - Account Deletion
+
+    /// Deletes the signed-in account and everything in it — profile, recipes,
+    /// menus, shopping lists, photos, friendships — through the
+    /// `deleteAccount` function (admin rights, so no fresh sign-in needed),
+    /// then signs out locally so the app returns to the sign-in screen.
+    func deleteAccount() async throws {
+        _ = try await Functions.functions().httpsCallable("deleteAccount").call()
+
+        // The server has already removed the sign-in; drop the local session.
+        // If that local step stumbles, the account is gone regardless.
+        try? AuthManager.shared.signOut()
+    }
+}

@@ -1,0 +1,38 @@
+Thank you for reviewing Food & Friends.
+
+Food & Friends is a cook's journal. You write down the recipes you cook (with photos), keep variations and notes on them, plan the week's menus, and keep a shopping list that can be matched to products at a nearby Kroger store. Friends can see each other's activity at The Table, a shared feed of what everyone has been cooking.
+
+DEMO ACCOUNT
+Use the credentials in the Sign-In Required fields above:
+
+    DEMO EMAIL — fill in
+    DEMO PASSWORD — fill in
+
+The account is fully set up — there is no waitlist, invite code, or manual approval step. It already contains recipes (one with a photo), a weekly menu, a shopping list, and a friend, so The Table has entries to display.
+
+Email and password, Sign in with Apple, and Google Sign-In are all supported on the sign-in screen. New accounts accept the Terms of Use when they sign up.
+
+The chapters are along the bottom of every screen: HOME · RECIPES · SHOPPING, and MORE for MENUS · TABLE · YOU.
+
+KROGER
+On the Shopping list, the user can pick a Kroger store by ZIP code (or by pasting a kroger.com store link) and match shopping-list items to products and prices. This uses Kroger's public product API, called directly from the device. It works with any US ZIP code that has a Kroger-family store nearby (for example 45202, Cincinnati, OH). No Kroger account is needed or linked, and nothing is purchased in the app.
+
+LOCATION
+Location is optional. The app asks for it only if the user taps "Find me" during profile setup, to fill in a city and state once; the coordinates are not stored. Typing a city or leaving it blank works just as well.
+
+ACCOUNT DELETION
+In-app account deletion is under You → Delete account. It permanently deletes the profile, recipes, variations, menus, shopping lists, activity, friend links, photos and the sign-in account.
+
+USER-GENERATED CONTENT AND MODERATION
+Users can write recipes and menus, and friends see each other's activity at The Table. Each recipe is either kept among friends or shared with everyone.
+- Report an entry: press and hold an entry at The Table → Report.
+- Report a recipe or a person: the ⋯ menu on the recipe, or on the person's profile → Report.
+- Block a person: from their profile → Block. Blocking ends the friendship and hides their content.
+- Every new account accepts the Terms of Use at sign-up, which state zero tolerance for objectionable content and abusive users.
+Reports are reviewed by the developer; objectionable content is removed and repeat offenders' accounts are removed, typically within 24 hours.
+
+CONTACT
+Any questions during review: david.lonneman@gmail.com.
+Support: https://faf-1-93659.web.app/support
+Privacy Policy: https://faf-1-93659.web.app/privacy
+Terms of Use: https://faf-1-93659.web.app/terms
