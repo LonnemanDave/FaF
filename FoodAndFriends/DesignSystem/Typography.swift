@@ -1,7 +1,10 @@
 import SwiftUI
 
-// MARK: - Typography System
-/// Food and Friends typography - clean, minimal, readable
+// MARK: - Typography — legacy names, journal behaviour
+/// The old type scale, re-set in the journal's faces so unconverted screens
+/// match: display and headings in the serif (New York), body in the text
+/// face. New work uses `Font.plate` / `.figure` / `.setting` and
+/// `Text.smallCaps` from JournalKit directly.
 
 struct FAFTypography {
 
@@ -13,16 +16,16 @@ struct FAFTypography {
 
     // MARK: - Display Styles (Hero text, splash screens)
 
-    static let displayLarge = Font.system(size: 48, weight: .bold, design: fontFamily)
-    static let displayMedium = Font.system(size: 36, weight: .bold, design: fontFamily)
-    static let displaySmall = Font.system(size: 28, weight: .bold, design: fontFamily)
+    static let displayLarge = Font.plate(44)
+    static let displayMedium = Font.plate(34)
+    static let displaySmall = Font.plate(28)
 
     // MARK: - Heading Styles
 
-    static let h1 = Font.system(size: 24, weight: .bold, design: fontFamily)
-    static let h2 = Font.system(size: 20, weight: .semibold, design: fontFamily)
-    static let h3 = Font.system(size: 18, weight: .semibold, design: fontFamily)
-    static let h4 = Font.system(size: 16, weight: .medium, design: fontFamily)
+    static let h1 = Font.plate(26)
+    static let h2 = Font.plate(21, .semibold)
+    static let h3 = Font.plate(18, .semibold)
+    static let h4 = Font.plate(16, .semibold)
 
     // MARK: - Body Styles
 
@@ -56,7 +59,7 @@ struct FAFTextStyle: ViewModifier {
     let color: Color
     let lineSpacing: CGFloat
 
-    init(font: Font, color: Color = .fafBlack, lineSpacing: CGFloat = 4) {
+    init(font: Font, color: Color = Theme.ink, lineSpacing: CGFloat = 4) {
         self.font = font
         self.color = color
         self.lineSpacing = lineSpacing

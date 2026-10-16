@@ -44,7 +44,7 @@ struct FAFSpacing {
     // MARK: - Screen Padding
 
     /// Standard horizontal screen padding
-    static let screenHorizontal: CGFloat = sm  // 16
+    static let screenHorizontal: CGFloat = 20 // the printer's margin (Theme.margin)
 
     /// Standard vertical screen padding
     static let screenVertical: CGFloat = lg    // 24
@@ -72,64 +72,46 @@ struct FAFSpacing {
 
 // MARK: - Corner Radius
 
+/// Print has no rounded corners. Every radius is zero; the names stay only
+/// so screens not yet rebuilt on JournalKit still compile. New work doesn't
+/// round anything — a photograph is cropped, not carded.
 struct FAFRadius {
-
-    /// No radius
     static let none: CGFloat = 0
-
-    /// Small radius - subtle rounding (4pt)
-    static let xs: CGFloat = 4
-
-    /// Default radius - buttons, inputs (8pt)
-    static let sm: CGFloat = 8
-
-    /// Medium radius - cards (12pt)
-    static let md: CGFloat = 12
-
-    /// Large radius - modals, large cards (16pt)
-    static let lg: CGFloat = 16
-
-    /// Extra large radius - floating elements (24pt)
-    static let xl: CGFloat = 24
-
-    /// Full/Pill radius
-    static let full: CGFloat = 9999
+    static let xs: CGFloat = 0
+    static let sm: CGFloat = 0
+    static let md: CGFloat = 0
+    static let lg: CGFloat = 0
+    static let xl: CGFloat = 0
+    static let full: CGFloat = 0
 }
 
 // MARK: - Shadows
 
+/// Nothing floats on a page. Kept as no-ops for unconverted screens.
 struct FAFShadow {
-
-    /// Subtle shadow - for slight elevation
-    static let subtle = Shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-
-    /// Default shadow - cards, buttons
-    static let `default` = Shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
-
-    /// Medium shadow - dropdowns, popovers
-    static let medium = Shadow(color: .black.opacity(0.12), radius: 16, x: 0, y: 8)
-
-    /// Large shadow - modals, dialogs
-    static let large = Shadow(color: .black.opacity(0.16), radius: 24, x: 0, y: 12)
+    static let subtle = Shadow()
+    static let `default` = Shadow()
+    static let medium = Shadow()
+    static let large = Shadow()
 }
 
 struct Shadow {
-    let color: Color
-    let radius: CGFloat
-    let x: CGFloat
-    let y: CGFloat
+    let color: Color = .clear
+    let radius: CGFloat = 0
+    let x: CGFloat = 0
+    let y: CGFloat = 0
 }
 
 // MARK: - View Extensions
 
 extension View {
     func fafShadow(_ shadow: Shadow) -> some View {
-        self.shadow(color: shadow.color, radius: shadow.radius, x: shadow.x, y: shadow.y)
+        self
     }
 
     /// Standard screen padding
     func fafScreenPadding() -> some View {
-        self.padding(.horizontal, FAFSpacing.screenHorizontal)
+        self.padding(.horizontal, Theme.margin)
             .padding(.vertical, FAFSpacing.screenVertical)
     }
 

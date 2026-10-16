@@ -6,6 +6,14 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         FirebaseApp.configure()
+
+        // Journal chrome for the UIKit surfaces SwiftUI still renders
+        JournalAppearance.install()
+
+        #if DEBUG
+        DesignHarness.install()
+        #endif
+
         return true
     }
 

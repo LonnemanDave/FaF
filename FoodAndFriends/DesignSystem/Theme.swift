@@ -1,99 +1,55 @@
 import SwiftUI
 
-// MARK: - Theme
-/// Central theme configuration for Food and Friends
-/// Combines colors, typography, and spacing into a unified system
+/// The cooking journal's palette and measures.
+///
+/// One ramp, defined once in the asset catalog with a light edition (cream
+/// paper, brown ink) and a dark one (warm stone, cream ink):
+/// `paper` → `fill` → `rule` → `ink3` → `ink2` → `ink`, plus `paprika`
+/// (the accent), `herb`, `saffron` and the two state inks.
+///
+/// Never introduce a one-off colour — no hex in a view, no `.white`, no
+/// `.black`, and no tinted boxes (`accent.opacity(0.1)` behind a button).
+/// Colour marks a word or a figure; it never fills a block. Add to the ramp
+/// here and in the asset catalog, or use what's there. A fixed colour is how
+/// text went white-on-white in dark mode.
+enum Theme {
+    // MARK: - The ramp
 
-struct FAFTheme {
+    /// The page. One surface — there is no second background tier.
+    static let paper = Color("Paper")
+    /// The one step off the page: input lines, a chosen block, a photo's empty frame.
+    static let fill = Color("Fill")
+    /// Hairlines — the rules that replace card edges.
+    static let rule = Color("Rule")
+    /// Titles and body text.
+    static let ink = Color("Ink")
+    /// Secondary text — descriptions, labels.
+    static let ink2 = Color("Ink2")
+    /// Marginalia — timestamps, placeholders, dot leaders. Never for anything that must be read.
+    static let ink3 = Color("Ink3")
 
-    // MARK: - Singleton
-    static let shared = FAFTheme()
+    // MARK: - Inks
 
-    private init() {}
+    /// The accent. Figures, the open chapter, anything that wants the eye.
+    static let paprika = Color("Paprika")
+    /// The second ink — vegetables, a chef's note, the lunch stamp.
+    static let herb = Color("Herb")
+    /// Breakfast, a star, a favourite.
+    static let saffron = Color("Saffron")
+    static let error = Color("Error")
+    static let warning = Color("Warning")
 
-    // MARK: - Color Scheme
+    /// The accent by its job rather than its name.
+    static let accent = paprika
 
-    struct Colors {
-        // Backgrounds
-        let background = Color.fafWhite
-        let backgroundSecondary = Color.fafGrayXXLight
-        let backgroundTertiary = Color.fafGrayXLight
+    // MARK: - Measures
 
-        // Text
-        let textPrimary = Color.fafBlack
-        let textSecondary = Color.fafGrayDark
-        let textTertiary = Color.fafGray
-        let textDisabled = Color.fafGrayLight
+    /// The printer's margin — one measure, used on every page.
+    static let margin: CGFloat = 20
 
-        // Accent
-        let accent = Color.fafCoral
-        let accentSecondary = Color.fafOrange
-        let accentBackground = Color.fafCoralLight
-
-        // Borders
-        let border = Color.fafGrayXLight
-        let borderStrong = Color.fafGrayLight
-
-        // States
-        let success = Color.fafSuccess
-        let warning = Color.fafWarning
-        let error = Color.fafError
-    }
-
-    let colors = Colors()
-
-    // MARK: - Animation Durations
-
-    struct Animation {
-        let fast: Double = 0.15
-        let normal: Double = 0.25
-        let slow: Double = 0.35
-
-        var fastSpring: SwiftUI.Animation {
-            .spring(response: fast, dampingFraction: 0.8)
-        }
-
-        var normalSpring: SwiftUI.Animation {
-            .spring(response: normal, dampingFraction: 0.75)
-        }
-
-        var slowSpring: SwiftUI.Animation {
-            .spring(response: slow, dampingFraction: 0.7)
-        }
-    }
-
-    let animation = Animation()
-
-    // MARK: - Icon Sizes
-
-    struct IconSize {
-        let xs: CGFloat = 16
-        let sm: CGFloat = 20
-        let md: CGFloat = 24
-        let lg: CGFloat = 32
-        let xl: CGFloat = 48
-    }
-
-    let iconSize = IconSize()
-}
-
-// MARK: - Environment Key
-
-private struct ThemeKey: EnvironmentKey {
-    static let defaultValue = FAFTheme.shared
-}
-
-extension EnvironmentValues {
-    var fafTheme: FAFTheme {
-        get { self[ThemeKey.self] }
-        set { self[ThemeKey.self] = newValue }
-    }
-}
-
-// MARK: - View Extension
-
-extension View {
-    func fafTheme(_ theme: FAFTheme = .shared) -> some View {
-        environment(\.fafTheme, theme)
-    }
+    static let spacingXS: CGFloat = 4
+    static let spacingSM: CGFloat = 8
+    static let spacingMD: CGFloat = 16
+    static let spacingLG: CGFloat = 24
+    static let spacingXL: CGFloat = 32
 }
