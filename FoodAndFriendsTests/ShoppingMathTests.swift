@@ -304,3 +304,39 @@ final class ShoppingRemoveTests: XCTestCase {
         XCTAssertTrue(left.allSatisfy { $0.sourceRecipeTitles == ["Soup"] })
     }
 }
+
+// MARK: - Scaling for more or fewer servings
+
+final class IngredientScalingTests: XCTestCase {
+    func testWholeAndFractions() {
+        XCTAssertEqual(Ingredient.scaledQuantity("2 1/4", by: 2), "4 1/2")
+        XCTAssertEqual(Ingredient.scaledQuantity("3/4", by: 0.5), "3/8")
+        XCTAssertEqual(Ingredient.scaledQuantity("1", by: 1.5), "1 1/2")
+        XCTAssertEqual(Ingredient.scaledQuantity("1/2", by: 0.5), "1/4")
+    }
+
+    func testBigAmountsRoundToWholeNumbers() {
+        XCTAssertEqual(Ingredient.scaledQuantity("750", by: 1.5), "1125")
+        XCTAssertEqual(Ingredient.scaledQuantity("500", by: 1.0 / 3), "167")
+    }
+
+    func testRangesScaleBothEnds() {
+        XCTAssertEqual(Ingredient.scaledQuantity("1-2", by: 2), "2-4")
+        XCTAssertEqual(Ingredient.scaledQuantity("2 to 3", by: 2), "4 to 6")
+    }
+
+    func testWordsStayAsWritten() {
+        XCTAssertEqual(Ingredient.scaledQuantity("pinch", by: 2), "pinch")
+        XCTAssertEqual(Ingredient.scaledQuantity("to taste", by: 3), "to taste")
+        XCTAssertEqual(Ingredient.scaledQuantity("", by: 2), "")
+    }
+
+    func testScaledKeepsTheSameIngredient() {
+        let salt = Ingredient(name: "kosher salt", quantity: "2 1/4", unit: "tsp")
+        let doubled = salt.scaled(by: 2)
+        XCTAssertEqual(doubled.id, salt.id)
+        XCTAssertEqual(doubled.quantity, "4 1/2")
+        XCTAssertEqual(doubled.unit, "tsp")
+        XCTAssertEqual(salt.scaled(by: 1).quantity, "2 1/4")
+    }
+}

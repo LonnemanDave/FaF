@@ -82,13 +82,15 @@ final class ShoppingListService: ObservableObject {
 
     /// Takes a recipe back off the list: its amounts come out, lines only it
     /// wanted go, and lines another recipe shares keep that recipe's share.
-    func removeRecipe(titled title: String) async {
+    /// `ingredients`: the amounts as they went on — scaled, if the recipe
+    /// was cooked for more or fewer. Defaults to the recipe as written.
+    func removeRecipe(titled title: String, ingredients: [Ingredient]? = nil) async {
         guard var updated = list else { return }
         let recipe = (RecipeService.shared.userRecipes
             + RecipeService.shared.friendsRecipes
             + RecipeService.shared.globalRecipes).first { $0.title == title }
         if let recipe {
-            updated.items = ShoppingMath.remove(recipe.ingredients, of: (id: recipe.id, title: title), from: updated.items)
+            updated.items = ShoppingMath.remove(ingredients ?? recipe.ingredients, of: (id: recipe.id, title: title), from: updated.items)
             if let id = recipe.id { updated.recipeIds.removeAll { $0 == id } }
         }
         // Anything still naming it — a variation's ingredients, a recipe edited

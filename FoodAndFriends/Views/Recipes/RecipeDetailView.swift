@@ -15,6 +15,9 @@ struct RecipeDetailView: View {
     @State private var stepImage: UIImage?
     @State private var uploadingStepId: String?
     @State private var viewingPhoto: ViewedStepPhoto?
+    /// How many it's being cooked for — nil means as written. Not saved:
+    /// the reader's pencil, like crossing off.
+    @State private var cookingFor: Int?
     @State private var showError = false
     @State private var errorMessage = ""
 
@@ -84,8 +87,14 @@ struct RecipeDetailView: View {
         }
     }
 
+    /// The ingredients for however many it's being cooked for.
     private var currentIngredients: [Ingredient] {
-        selectedVariation?.ingredients ?? recipe.ingredients
+        (selectedVariation?.ingredients ?? recipe.ingredients).map { $0.scaled(by: scale) }
+    }
+
+    private var scale: Double {
+        guard let written = recipe.servings, written > 0, let cookingFor else { return 1 }
+        return Double(cookingFor) / Double(written)
     }
 
     private var currentSteps: [RecipeStep] {
@@ -559,6 +568,50 @@ struct RecipeDetailView: View {
         if !items.isEmpty {
             Figures(items: items)
         }
+        if let written = recipe.servings, written > 0 {
+            servingsLine(written: written)
+        }
+    }
+
+    /// Cooking for — minus, the number, plus; and, once it's changed, how
+    /// far from the recipe it is and a way back.
+    private func servingsLine(written: Int) -> some View {
+        let count = cookingFor ?? written
+        return HStack(alignment: .center, spacing: Theme.spacingSM) {
+            Text("Cooking for".uppercased())
+                .smallCaps(10, weight: .semibold, tracking: 1.4)
+                .foregroundColor(Theme.ink2)
+            if cookingFor != nil, count != written {
+                Text("×\(Ingredient.scaledQuantity("1", by: Double(count) / Double(written)))")
+                    .font(.figure(12, .medium))
+                    .foregroundColor(Theme.accent)
+                MarginButton("As written") { cookingFor = nil }
+            }
+            Spacer(minLength: Theme.spacingSM)
+            servingsButton("minus", label: "One fewer", disabled: count <= 1) { cookingFor = count - 1 }
+            Text("\(count)")
+                .font(.figure(20, .semibold))
+                .foregroundColor(Theme.ink)
+                .frame(minWidth: 32)
+                .contentTransition(.numericText())
+                .accessibilityLabel("Cooking for \(count)")
+            servingsButton("plus", label: "One more", disabled: count >= 99) { cookingFor = count + 1 }
+        }
+        .animation(.easeOut(duration: 0.15), value: count)
+    }
+
+    private func servingsButton(_ symbol: String, label: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(disabled ? Theme.ink3 : Theme.ink)
+                .frame(width: 34, height: 34)
+                .overlay(Rectangle().stroke(Theme.rule, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .accessibilityLabel(label)
     }
 
     // MARK: - Ingredients Section
@@ -636,7 +689,7 @@ struct RecipeDetailView: View {
                     Spacer()
                     MarginButton("Take off the list") {
                         Task {
-                            await shoppingService.removeRecipe(titled: recipe.title)
+                            await shoppingService.removeRecipe(titled: recipe.title, ingredients: currentIngredients)
                             addedNote = shoppingService.lastError ?? "Taken off the list"
                         }
                     }

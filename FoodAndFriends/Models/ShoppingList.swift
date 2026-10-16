@@ -284,8 +284,9 @@ enum ShoppingMath {
     static func printed(_ value: Double) -> String {
         let whole = Int(value)
         let fraction = value - Double(whole)
-        let fractions: [(Double, String)] = [(0, ""), (0.25, "1/4"), (1.0 / 3, "1/3"), (0.5, "1/2"),
-                                             (2.0 / 3, "2/3"), (0.75, "3/4"), (1, "")]
+        let fractions: [(Double, String)] = [(0, ""), (0.125, "1/8"), (0.25, "1/4"), (1.0 / 3, "1/3"),
+                                             (0.375, "3/8"), (0.5, "1/2"), (0.625, "5/8"), (2.0 / 3, "2/3"),
+                                             (0.75, "3/4"), (0.875, "7/8"), (1, "")]
         if let match = fractions.first(where: { abs($0.0 - fraction) < 0.02 }) {
             let wholePart = whole + (match.0 == 1 ? 1 : 0)
             switch (wholePart, match.1.isEmpty) {

@@ -330,3 +330,32 @@ extension Recipe {
         )
     }
 }
+
+// MARK: - Cooking for more, or fewer
+
+extension Ingredient {
+    /// The same ingredient for a different number of servings. Same id, so
+    /// crossing off and the steps' ingredient lists still find it.
+    func scaled(by factor: Double) -> Ingredient {
+        guard abs(factor - 1) > 0.0001 else { return self }
+        var copy = self
+        copy.quantity = Self.scaledQuantity(quantity, by: factor)
+        return copy
+    }
+
+    /// "2 1/4" × 2 → "4 1/2"; "1-2" × 2 → "2-4"; "750" × 1.5 → "1125".
+    /// Anything that isn't a number — "a pinch", "to taste" — stays as written.
+    static func scaledQuantity(_ quantity: String, by factor: Double) -> String {
+        let text = quantity.trimmingCharacters(in: .whitespaces)
+        for dash in ["-", "–", " to "] where text.contains(dash) {
+            let ends = text.components(separatedBy: dash)
+            guard ends.allSatisfy({ ShoppingMath.parse($0) != nil }) else { return quantity }
+            return ends.map { scaledQuantity($0, by: factor) }.joined(separator: dash)
+        }
+        guard let value = ShoppingMath.parse(text) else { return quantity }
+        let scaled = value * factor
+        // Big amounts are weighed or poured, not spooned: whole numbers.
+        if scaled >= 10 { return "\(Int(scaled.rounded()))" }
+        return ShoppingMath.printed(scaled)
+    }
+}
