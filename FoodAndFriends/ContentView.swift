@@ -18,6 +18,7 @@ struct ContentView: View {
             case "ai-settings": AISettingsView()
             case "friends": FriendsView()
             case "add-friend": AddFriendView()
+            case "crop": PhotoCropper(image: DesignHarness.samplePhoto, onDone: { _ in }, onCancel: {})
             case "friend": NavigationStack { UserProfileView(user: DesignHarness.friends[0]) }
             default: MainTabView()
             }

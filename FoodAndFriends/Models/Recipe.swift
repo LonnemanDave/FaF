@@ -6,8 +6,9 @@ struct RecipeStep: Codable, Identifiable, Hashable {
     var instruction: String
     var ingredientIds: [String]
     var orderIndex: Int
-    /// Photographs taken at this step while cooking it — nil until there are any.
-    var photoURLs: [String]?
+    /// The photograph of this step — one, set and changed only by the
+    /// recipe's cook. Nil until there is one.
+    var photoURL: String?
 
     init(instruction: String, ingredientIds: [String] = [], orderIndex: Int = 0) {
         self.id = UUID().uuidString

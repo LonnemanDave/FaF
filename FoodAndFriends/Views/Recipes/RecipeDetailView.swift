@@ -8,8 +8,8 @@ struct RecipeDetailView: View {
     @ObservedObject var moderation = ModerationService.shared
     @State private var reportingVariation: ReportSubject?
 
-    // Step photographs — keyed by step id, saved with the recipe's steps.
-    @State private var stepPhotos: [String: [String]] = [:]
+    // Step photographs — one per step, keyed by step id, saved with the steps.
+    @State private var stepPhotos: [String: String] = [:]
     @State private var photoStep: RecipeStep?
     @State private var pickerSource: PhotoSource?
     @State private var stepImage: UIImage?
@@ -25,6 +25,15 @@ struct RecipeDetailView: View {
         case camera, library
         var id: String { rawValue }
     }
+
+    /// A photo being framed before it's saved, and where it's going.
+    private struct CropJob: Identifiable {
+        enum Target { case recipe, step(RecipeStep) }
+        let id = UUID()
+        let image: UIImage
+        let target: Target
+    }
+    @State private var cropping: CropJob?
 
     private struct ViewedStepPhoto: Identifiable {
         let url: String
@@ -186,7 +195,9 @@ struct RecipeDetailView: View {
         .task {
             await loadVariations()
             currentImageURL = recipe.firstImageURL
-            stepPhotos = Dictionary(uniqueKeysWithValues: latestSteps.map { ($0.id, $0.photoURLs ?? []) })
+            stepPhotos = Dictionary(uniqueKeysWithValues: latestSteps.compactMap { step in
+                step.photoURL.map { (step.id, $0) }
+            })
         }
         .confirmationDialog(
             "A photo for this step",
@@ -208,7 +219,20 @@ struct RecipeDetailView: View {
             stepImage = nil
             pickerSource = nil
             photoStep = nil
-            Task { await addStepPhoto(image, to: step) }
+            frame(image, for: .step(step))
+        }
+        .fullScreenCover(item: $cropping) { job in
+            PhotoCropper(image: job.image) { cropped in
+                cropping = nil
+                Task {
+                    switch job.target {
+                    case .recipe: await uploadRecipePhoto(cropped)
+                    case .step(let step): await addStepPhoto(cropped, to: step)
+                    }
+                }
+            } onCancel: {
+                cropping = nil
+            }
         }
         .alert("Couldn't save the photo", isPresented: $showError) {
             Button("OK", role: .cancel) {}
@@ -216,19 +240,12 @@ struct RecipeDetailView: View {
             Text(errorMessage)
         }
         .sheet(item: $viewingPhoto) { photo in
-            StepPhotoViewer(
-                url: photo.url,
-                caption: photo.caption,
-                onRemove: isOwner ? { Task { await removeStepPhoto(photo.url, from: photo.stepId) } } : nil
-            )
+            stepPhotoViewer(photo)
         }
         .onChange(of: selectedImage) { _, newImage in
-            if let image = newImage {
-                Task {
-                    await uploadRecipePhoto(image)
-                    selectedImage = nil
-                }
-            }
+            guard let image = newImage else { return }
+            selectedImage = nil
+            frame(image, for: .recipe)
         }
         .onChange(of: selectedVariation?.id) { _, _ in
             // A different chef's list — the pencil marks were for the other one.
@@ -395,7 +412,14 @@ struct RecipeDetailView: View {
     @ViewBuilder
     private var photo: some View {
         if displayedImageURL != nil || showEditButton {
-            PhotoPlate(url: displayedImageURL, height: 240, placeholder: "No photograph yet")
+            Group {
+                // At its own shape once there is one — as it was cropped.
+                if let url = displayedImageURL {
+                    NaturalPhoto(url: url)
+                } else {
+                    PhotoPlate(url: nil, height: 240, placeholder: "No photograph yet")
+                }
+            }
                 .overlay {
                     if isUploadingPhoto {
                         ZStack {
@@ -433,6 +457,37 @@ struct RecipeDetailView: View {
         recipeService.userRecipes.first { $0.id == recipe.id }?.steps ?? recipe.steps
     }
 
+    /// The full-size view — with Replace and Remove for the recipe's cook only.
+    private func stepPhotoViewer(_ photo: ViewedStepPhoto) -> StepPhotoViewer {
+        guard isOwner else {
+            return StepPhotoViewer(url: photo.url, caption: photo.caption)
+        }
+        let step: RecipeStep? = latestSteps.first { $0.id == photo.stepId }
+        return StepPhotoViewer(
+            url: photo.url,
+            caption: photo.caption,
+            onCrop: { image in
+                guard let step else { return }
+                frame(image, for: .step(step))
+            },
+            onReplace: {
+                // Ask again once the viewer has gone.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { photoStep = step }
+            },
+            onRemove: {
+                Task { await removeStepPhoto(from: photo.stepId) }
+            }
+        )
+    }
+
+    /// Opens the cropper once whatever's on screen — the picker, the viewer —
+    /// has gone; two full-screen covers can't trade places in one beat.
+    private func frame(_ image: UIImage, for target: CropJob.Target) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            cropping = CropJob(image: image, target: target)
+        }
+    }
+
     private func addStepPhoto(_ image: UIImage, to step: RecipeStep) async {
         guard let recipeId = recipe.id else { return }
         uploadingStepId = step.id
@@ -443,7 +498,7 @@ struct RecipeDetailView: View {
             let url = try await StorageService.shared.uploadImage(
                 image.resized(toMaxDimension: 1600), path: "recipe_images", filename: filename
             )
-            stepPhotos[step.id, default: []].append(url)
+            stepPhotos[step.id] = url
             try await saveStepPhotos()
         } catch {
             errorMessage = "The photo didn't save — \(error.localizedDescription)"
@@ -451,8 +506,8 @@ struct RecipeDetailView: View {
         }
     }
 
-    private func removeStepPhoto(_ url: String, from stepId: String) async {
-        stepPhotos[stepId]?.removeAll { $0 == url }
+    private func removeStepPhoto(from stepId: String) async {
+        stepPhotos[stepId] = nil
         do {
             try await saveStepPhotos()
         } catch {
@@ -465,8 +520,7 @@ struct RecipeDetailView: View {
         guard let recipeId = recipe.id else { return }
         let steps = latestSteps.map { step -> RecipeStep in
             var step = step
-            let photos = stepPhotos[step.id] ?? []
-            step.photoURLs = photos.isEmpty ? nil : photos
+            step.photoURL = stepPhotos[step.id]
             return step
         }
         try await recipeService.updateSteps(steps, recipeId: recipeId)
@@ -717,11 +771,11 @@ struct RecipeDetailView: View {
 
             if !steps.isEmpty {
                 ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
-                    MethodStep(number: index + 1, text: step.instruction, ingredients: ingredientsForStep(step))
-                    // Photos belong to the original's steps; a friend's version shows its own text only.
+                    // The step's photo heads it — the original's steps only;
+                    // a friend's version shows its own text.
                     if selectedVariation == nil {
-                        StepPhotoStrip(
-                            photos: stepPhotos[step.id] ?? [],
+                        StepPhoto(
+                            url: stepPhotos[step.id],
                             canAdd: isOwner,
                             isUploading: uploadingStepId == step.id,
                             onAdd: { photoStep = step },
@@ -730,9 +784,9 @@ struct RecipeDetailView: View {
                                                                caption: "Step \(index + 1) — \(step.instruction)")
                             }
                         )
-                        .padding(.leading, 24 + Theme.spacingMD)
-                        .padding(.bottom, Theme.spacingSM)
+                        .padding(.top, Theme.spacingMD)
                     }
+                    MethodStep(number: index + 1, text: step.instruction, ingredients: ingredientsForStep(step))
                     if index < steps.count - 1 {
                         DashedDivider()
                     }

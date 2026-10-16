@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import UIKit
 
 /// A way to look at the journal's pages without signing in.
 ///
@@ -19,6 +20,24 @@ import Foundation
 /// DEBUG only — none of this ships.
 @MainActor
 enum DesignHarness {
+    /// A 4:3 test card for the cropper: warm bands and a grid, so the crop is easy to read.
+    static var samplePhoto: UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 1600, height: 1200)).image { context in
+            let colors: [UIColor] = [.systemOrange, .systemRed, .brown, .systemYellow]
+            for (index, color) in colors.enumerated() {
+                color.setFill()
+                context.fill(CGRect(x: 0, y: CGFloat(index) * 300, width: 1600, height: 300))
+            }
+            UIColor.white.withAlphaComponent(0.6).setStroke()
+            for x in stride(from: 0, through: 1600, by: 200) {
+                context.cgContext.stroke(CGRect(x: CGFloat(x), y: 0, width: 0.5, height: 1200))
+            }
+            for y in stride(from: 0, through: 1200, by: 200) {
+                context.cgContext.stroke(CGRect(x: 0, y: CGFloat(y), width: 1600, height: 0.5))
+            }
+        }
+    }
+
 
     nonisolated static var isOn: Bool {
         let args = ProcessInfo.processInfo.arguments
