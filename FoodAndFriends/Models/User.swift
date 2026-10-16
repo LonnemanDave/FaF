@@ -12,6 +12,11 @@ struct FAFUser: Codable, Identifiable {
     let createdAt: Date
     var updatedAt: Date
 
+    /// The Kroger store the shopping list is matched against — its location
+    /// ID and the name it's shown under. Nil until one's chosen.
+    var krogerLocationId: String?
+    var krogerStoreName: String?
+
     var isProfileComplete: Bool {
         !username.isEmpty && !location.isEmpty
     }
@@ -49,6 +54,8 @@ struct FAFUser: Codable, Identifiable {
         location = try container.decode(String.self, forKey: .location)
         profileImageURL = try container.decodeIfPresent(String.self, forKey: .profileImageURL)
         friends = try container.decodeIfPresent([String].self, forKey: .friends) ?? []
+        krogerLocationId = try container.decodeIfPresent(String.self, forKey: .krogerLocationId)
+        krogerStoreName = try container.decodeIfPresent(String.self, forKey: .krogerStoreName)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
