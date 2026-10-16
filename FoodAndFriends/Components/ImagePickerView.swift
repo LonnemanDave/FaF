@@ -5,11 +5,13 @@ import UIKit
 /// Uses the older but more stable API to avoid constraint warnings.
 struct ImagePickerView: UIViewControllerRepresentable {
     @Binding var selectedImage: UIImage?
+    /// The photo library, or the camera where there is one.
+    var source: UIImagePickerController.SourceType = .photoLibrary
     @Environment(\.dismiss) private var dismiss
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
-        picker.sourceType = .photoLibrary
+        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(source) ? source : .photoLibrary
         picker.delegate = context.coordinator
         return picker
     }

@@ -95,7 +95,11 @@ class FeedService: ObservableObject {
     func fetchFeed(for user: FAFUser, limit: Int = 50) async {
         // Now handled by listeners, but keep for manual refresh
         guard let userId = user.id else { return }
-        startListening(userId: userId, friendIds: user.friends)
+        // Friendships both ways only — see AuthManager.setupFriendsSubscription.
+        let mutual = FriendService.shared.friends
+            .filter { $0.friends.contains(userId) }
+            .compactMap(\.id)
+        startListening(userId: userId, friendIds: mutual)
     }
 
     func refreshFeed(for user: FAFUser) async {

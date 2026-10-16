@@ -55,21 +55,8 @@ struct CreateRecipeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: FAFSpacing.xl) {
-                    // Close button
-                    HStack {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.fafGray)
-                                .padding(FAFSpacing.sm)
-                                .background(Color.fafGrayXLight)
-                                .clipShape(Circle())
-                        }
-                        Spacer()
-                    }
+                VStack(alignment: .leading, spacing: Theme.spacingXL) {
+                    PlateHeader(title: navigationTitle, subtitle: byline)
 
                     // Variation header
                     if effectiveVariationMode, let baseRecipe = effectiveBaseRecipe {
@@ -78,54 +65,74 @@ struct CreateRecipeView: View {
 
                     if !effectiveVariationMode {
                         basicInfoSection
-                        Divider()
                     }
 
                     ingredientsSection
-                    Divider()
+
                     stepsSection
 
                     if effectiveVariationMode {
-                        Divider()
                         notesSection
                     } else {
-                        Divider()
                         visibilitySection
                     }
 
-                    if isEditing {
-                        Divider()
-                        deleteSection
-                    }
+                    VStack(spacing: Theme.spacingMD) {
+                        Button {
+                            Task { await saveRecipe() }
+                        } label: {
+                            if isLoading {
+                                ProgressView().tint(Theme.paper)
+                            } else {
+                                Text(effectiveVariationMode ? "Save your version" : "Save the recipe")
+                            }
+                        }
+                        .buttonStyle(.press)
+                        .disabled(!isFormValid || isLoading)
 
-                    FAFButton(
-                        title: effectiveVariationMode ? "Save Variation" : "Save Recipe",
-                        style: .accent,
-                        isLoading: isLoading
-                    ) {
-                        Task { await saveRecipe() }
+                        if !isFormValid {
+                            Text(effectiveVariationMode
+                                 ? "Write at least one step to save."
+                                 : "A title and at least one step, and it can be saved.")
+                                .font(.setting(12).italic())
+                                .foregroundColor(Theme.ink3)
+                        }
+
+                        if isEditing {
+                            deleteSection
+                                .padding(.top, Theme.spacingSM)
+                        }
                     }
-                    .disabled(!isFormValid)
-                    .padding(.top, FAFSpacing.md)
                 }
-                .padding(FAFSpacing.lg)
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.fafBackground.ignoresSafeArea())
-            .navigationTitle(navigationTitle)
+            .background(Theme.paper)
+            .scrollDismissesKeyboard(.interactively)
             .navigationBarTitleDisplayMode(.inline)
+            .plainToolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    MarginButton("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    MarginButton("Save") { Task { await saveRecipe() } }
+                        .disabled(!isFormValid || isLoading)
+                        .opacity(isFormValid ? 1 : 0.35)
+                }
+            }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
             }
-            .alert("Delete Recipe", isPresented: $showDeleteConfirmation) {
+            .alert("Delete this recipe?", isPresented: $showDeleteConfirmation) {
                 Button("Delete", role: .destructive) {
                     Task { await deleteRecipe() }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Are you sure you want to delete this recipe? This cannot be undone.")
+                Text("It's taken out of your box for good. This can't be undone.")
             }
             .confirmationDialog("Recipe Exists", isPresented: $showDuplicatePrompt, titleVisibility: .visible) {
                 Button("Add My Variation") {
@@ -154,17 +161,23 @@ struct CreateRecipeView: View {
         }
     }
 
+    /// Under the title: whose hand it's written in.
+    private var byline: String {
+        guard let username = userService.currentUser?.username else { return "In your journal" }
+        return "In the hand of @\(username)"
+    }
+
     private var navigationTitle: String {
         if isEditingVariation {
-            return "Edit Variation"
+            return "Your version"
         } else if effectiveVariationMode {
-            return "Your Variation"
+            return "Your version"
         } else if isEditing {
-            return "Edit Recipe"
+            return "Editing"
         } else if isAIDraft {
-            return "AI Generated Recipe"
+            return "From the AI"
         } else {
-            return "New Recipe"
+            return "A new recipe"
         }
     }
 
@@ -213,86 +226,57 @@ struct CreateRecipeView: View {
     // MARK: - Variation Header
 
     private func variationHeader(for recipe: Recipe) -> some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-            HStack {
-                Image(systemName: "fork.knife")
-                    .foregroundColor(.fafCoral)
-                Text("Your Variation of:")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Your take on".uppercased())
+                .smallCaps(10, weight: .semibold, tracking: 1.4)
+                .foregroundColor(Theme.ink2)
             Text(recipe.title)
-                .font(FAFTypography.h2)
-                .foregroundColor(.fafTextPrimary)
+                .font(.plate(22))
+                .foregroundColor(Theme.ink)
             if let author = recipe.authorUsername {
-                Text("Original by @\(author)")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
+                Text("From the kitchen of @\(author)")
+                    .font(.setting(13).italic())
+                    .foregroundColor(Theme.ink3)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(FAFSpacing.md)
-        .background(Color.fafCoral.opacity(0.1))
-        .cornerRadius(FAFRadius.md)
+        .padding(.leading, Theme.spacingMD)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Theme.herb).frame(width: 2)
+        }
     }
 
     // MARK: - Notes Section
 
     private var notesSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            SectionHeader(title: "Chef's Notes", systemIcon: "note.text")
-
-            Text("Describe what makes your variation different")
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGray)
-
-            TextEditor(text: $variationNotes)
-                .font(FAFTypography.body)
-                .frame(minHeight: 100)
-                .padding(FAFSpacing.sm)
-                .background(Color.fafInputBackground)
-                .cornerRadius(FAFRadius.md)
-                .overlay(
-                    RoundedRectangle(cornerRadius: FAFRadius.md)
-                        .stroke(Color.fafDivider, lineWidth: 1)
-                )
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "Your note")
+            FieldLine(
+                label: "What you changed",
+                text: $variationNotes,
+                prompt: "More garlic, a splash of vinegar at the end…",
+                multiline: true
+            )
         }
     }
 
     // MARK: - Basic Info Section
 
     private var basicInfoSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            SectionHeader(title: "Basic Info", systemIcon: "info.circle")
+        VStack(alignment: .leading, spacing: Theme.spacingLG) {
+            FieldLine(label: "Title", text: $title, prompt: "What it's called")
+            FieldLine(label: "A line about it", text: $description, prompt: "Why you make it, what it's like", multiline: true)
 
-            FormField(label: "Title", placeholder: "Recipe name", text: $title)
-
-            VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                Text("Description")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
-                TextEditor(text: $description)
-                    .font(FAFTypography.body)
-                    .frame(minHeight: 80)
-                    .padding(FAFSpacing.sm)
-                    .background(Color.fafInputBackground)
-                    .cornerRadius(FAFRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FAFRadius.md)
-                            .stroke(Color.fafDivider, lineWidth: 1)
-                    )
+            HStack(alignment: .top, spacing: Theme.spacingLG) {
+                FieldLine(label: "Serves", text: $servings, prompt: "4")
+                    .keyboardType(.numberPad)
+                FieldLine(label: "Prep", text: $prepTime, prompt: "15", note: "min")
+                    .keyboardType(.numberPad)
+                FieldLine(label: "Cook", text: $cookTime, prompt: "30", note: "min")
+                    .keyboardType(.numberPad)
             }
 
-            HStack(spacing: FAFSpacing.md) {
-                FormField(label: "Servings", placeholder: "4", text: $servings, keyboardType: .numberPad)
-                FormField(label: "Prep (min)", placeholder: "15", text: $prepTime, keyboardType: .numberPad)
-                FormField(label: "Cook (min)", placeholder: "30", text: $cookTime, keyboardType: .numberPad)
-            }
-
-            FormField(label: "Tags", placeholder: "dinner, easy, healthy", text: $tags)
-            Text("Separate with commas")
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGrayLight)
+            FieldLine(label: "Tags", text: $tags, prompt: "dinner, stew, make-ahead", note: "commas between")
+                .textInputAutocapitalization(.never)
         }
     }
 
@@ -303,85 +287,69 @@ struct CreateRecipeView: View {
     }
 
     private var ingredientsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            SectionHeader(title: "Ingredients", systemIcon: "list.bullet")
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "Ingredients", figure: ingredients.isEmpty ? nil : "\(ingredients.count)")
 
-            HStack(spacing: FAFSpacing.sm) {
-                TextField("Qty", text: $newIngredientQuantity)
-                    .font(FAFTypography.body)
-                    .frame(width: 50)
-                    .padding(FAFSpacing.sm)
-                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafInputBackground)
-                    .cornerRadius(FAFRadius.sm)
-                    .keyboardType(.decimalPad)
-
-                TextField("Unit", text: $newIngredientUnit)
-                    .font(FAFTypography.body)
-                    .frame(width: 60)
-                    .padding(FAFSpacing.sm)
-                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafInputBackground)
-                    .cornerRadius(FAFRadius.sm)
-
-                TextField("Ingredient", text: $newIngredientName)
-                    .font(FAFTypography.body)
-                    .padding(FAFSpacing.sm)
-                    .background(isEditingIngredient ? Color.fafCoral.opacity(0.1) : Color.fafInputBackground)
-                    .cornerRadius(FAFRadius.sm)
-
-                if isEditingIngredient {
+            // What's written so far — tap one to change it.
+            ForEach(ingredients) { ingredient in
+                let editing = editingIngredientId == ingredient.id
+                HStack(alignment: .firstTextBaseline, spacing: Theme.spacingSM) {
                     Button {
-                        cancelEditingIngredient()
+                        startEditingIngredient(ingredient)
                     } label: {
-                        FAFIcon(.close, size: 20, color: .fafGray)
+                        IngredientLine(ingredient, struck: false)
+                            .opacity(editing ? 0.4 : 1)
                     }
-                }
+                    .buttonStyle(.plain)
 
-                Button {
-                    if isEditingIngredient {
-                        saveEditedIngredient()
+                    if editing {
+                        Text("Editing".uppercased())
+                            .smallCaps(9, weight: .semibold, tracking: 1.2)
+                            .foregroundColor(Theme.herb)
                     } else {
-                        addIngredient()
+                        Button {
+                            removeIngredient(ingredient)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(Theme.ink3)
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove \(ingredient.name)")
                     }
-                } label: {
-                    Image(systemName: isEditingIngredient ? "checkmark" : "plus")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(newIngredientName.isEmpty || newIngredientQuantity.isEmpty ? .fafGrayLight : .fafCoral)
                 }
-                .disabled(newIngredientName.isEmpty || newIngredientQuantity.isEmpty)
             }
 
-            if !ingredients.isEmpty {
-                VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                    ForEach(ingredients) { ingredient in
-                        Button {
-                            startEditingIngredient(ingredient)
-                        } label: {
-                            HStack {
-                                Circle()
-                                    .fill(editingIngredientId == ingredient.id ? Color.fafSage : Color.fafCoral)
-                                    .frame(width: 6, height: 6)
-
-                                Text(ingredient.displayString)
-                                    .font(FAFTypography.body)
-                                    .foregroundColor(editingIngredientId == ingredient.id ? .fafGray : .fafTextPrimary)
-
-                                Spacer()
-
-                                if editingIngredientId == ingredient.id {
-                                    Text("editing")
-                                        .font(FAFTypography.caption)
-                                        .foregroundColor(.fafSage)
-                                } else {
-                                    FAFIcon(.close, size: 16, color: .fafGray)
-                                        .onTapGesture {
-                                            removeIngredient(ingredient)
-                                        }
-                                }
-                            }
-                        }
-                        .padding(.vertical, FAFSpacing.xxs)
+            // The line to write the next one on.
+            HStack(alignment: .bottom, spacing: Theme.spacingMD) {
+                FieldLine(label: "Amount", text: $newIngredientQuantity, prompt: "2")
+                    .keyboardType(.numbersAndPunctuation)
+                    .frame(width: 64)
+                FieldLine(label: "Unit", text: $newIngredientUnit, prompt: "cups")
+                    .textInputAutocapitalization(.never)
+                    .frame(width: 72)
+                FieldLine(label: "Ingredient", text: $newIngredientName, prompt: "onions, chopped")
+                    .textInputAutocapitalization(.never)
+                    .submitLabel(.done)
+                    .onSubmit {
+                        guard !newIngredientName.isEmpty, !newIngredientQuantity.isEmpty else { return }
+                        isEditingIngredient ? saveEditedIngredient() : addIngredient()
                     }
+            }
+            .padding(.top, ingredients.isEmpty ? 0 : Theme.spacingSM)
+
+            HStack {
+                if isEditingIngredient {
+                    MarginButton("Cancel") { cancelEditingIngredient() }
                 }
+                Spacer()
+                MarginButton(isEditingIngredient ? "Save ingredient" : "Add ingredient") {
+                    isEditingIngredient ? saveEditedIngredient() : addIngredient()
+                }
+                .disabled(newIngredientName.isEmpty || newIngredientQuantity.isEmpty)
+                .opacity(newIngredientName.isEmpty || newIngredientQuantity.isEmpty ? 0.35 : 1)
             }
         }
     }
@@ -389,8 +357,8 @@ struct CreateRecipeView: View {
     // MARK: - Steps Section
 
     private var stepsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            SectionHeader(title: "Steps", systemIcon: "list.number")
+        VStack(alignment: .leading, spacing: Theme.spacingMD) {
+            SectionHead(title: "Method", figure: steps.isEmpty ? nil : "\(steps.count) \(steps.count == 1 ? "step" : "steps")")
 
             ForEach(Array(steps.enumerated()), id: \.element.id) { index, _ in
                 StepEditorCard(
@@ -401,22 +369,15 @@ struct CreateRecipeView: View {
                     onMoveUp: index > 0 ? { moveStep(from: index, to: index - 1) } : nil,
                     onMoveDown: index < steps.count - 1 ? { moveStep(from: index, to: index + 1) } : nil
                 )
+                if index < steps.count - 1 {
+                    DashedDivider()
+                }
             }
 
-            Button {
+            Button(steps.isEmpty ? "Write the first step" : "Add a step") {
                 addStep()
-            } label: {
-                HStack {
-                    FAFIcon(.plus, size: 18, color: .fafCoral)
-                    Text("Add Step")
-                        .font(FAFTypography.button)
-                        .foregroundColor(.fafCoral)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(FAFSpacing.md)
-                .background(Color.fafCoral.opacity(0.1))
-                .cornerRadius(FAFRadius.md)
             }
+            .buttonStyle(.pressOutline)
         }
     }
 
@@ -431,41 +392,25 @@ struct CreateRecipeView: View {
     // MARK: - Visibility Section
 
     private var visibilitySection: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-                Text("Make Public")
-                    .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafTextPrimary)
-                Text("Share with the community")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
-            }
-            Spacer()
-            Toggle("", isOn: $isPublic)
-                .tint(.fafCoral)
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "Who sees it")
+            IndexSelector(
+                options: [(value: false, label: "Friends"), (value: true, label: "Everyone")],
+                selection: $isPublic
+            )
+            Text(isPublic
+                 ? "Anyone using Food & Friends can find it under Everyone."
+                 : "Only your friends see it, at their table and in their recipes.")
+                .font(.setting(12).italic())
+                .foregroundColor(Theme.ink3)
         }
-        .padding(FAFSpacing.md)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
     }
 
     // MARK: - Delete Section
 
     private var deleteSection: some View {
-        Button {
+        MarginButton("Delete this recipe", destructive: true) {
             showDeleteConfirmation = true
-        } label: {
-            HStack {
-                Image(systemName: "trash")
-                    .font(.system(size: 16))
-                Text("Delete Recipe")
-                    .font(FAFTypography.button)
-            }
-            .foregroundColor(.red)
-            .frame(maxWidth: .infinity)
-            .padding(FAFSpacing.md)
-            .background(Color.red.opacity(0.1))
-            .cornerRadius(FAFRadius.md)
         }
     }
 
@@ -644,53 +589,11 @@ struct CreateRecipeView: View {
     }
 }
 
-// MARK: - Section Header
+// MARK: - Step Editor
 
-struct SectionHeader: View {
-    let title: String
-    let systemIcon: String
-
-    var body: some View {
-        HStack(spacing: FAFSpacing.sm) {
-            Image(systemName: systemIcon)
-                .font(.system(size: 18))
-                .foregroundColor(.fafCoral)
-            Text(title)
-                .font(FAFTypography.h3)
-                .foregroundColor(.fafTextPrimary)
-        }
-    }
-}
-
-// MARK: - Form Field
-
-struct FormField: View {
-    let label: String
-    let placeholder: String
-    @Binding var text: String
-    var keyboardType: UIKeyboardType = .default
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-            Text(label)
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGray)
-            TextField(placeholder, text: $text)
-                .font(FAFTypography.body)
-                .keyboardType(keyboardType)
-                .padding(FAFSpacing.md)
-                .background(Color.fafInputBackground)
-                .cornerRadius(FAFRadius.md)
-                .overlay(
-                    RoundedRectangle(cornerRadius: FAFRadius.md)
-                        .stroke(Color.fafDivider, lineWidth: 1)
-                )
-        }
-    }
-}
-
-// MARK: - Step Editor Card
-
+/// One step of the method being written: the serif numeral in the margin,
+/// a line to write on, and the ingredients this step uses — ticked from the
+/// ones written above.
 struct StepEditorCard: View {
     let stepNumber: Int
     @Binding var step: RecipeStep
@@ -700,150 +603,88 @@ struct StepEditorCard: View {
     var onMoveDown: (() -> Void)?
 
     @State private var showIngredientPicker = false
+    @FocusState private var writing: Bool
 
     private var selectedIngredients: [Ingredient] {
         availableIngredients.filter { step.ingredientIds.contains($0.id) }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-            HStack {
-                Text("\(stepNumber)")
-                    .font(FAFTypography.h3)
-                    .foregroundColor(.fafWhite)
-                    .frame(width: 28, height: 28)
-                    .background(Color.fafCoral)
-                    .clipShape(Circle())
+        HStack(alignment: .firstTextBaseline, spacing: Theme.spacingMD) {
+            Text("\(stepNumber)")
+                .font(.plate(22))
+                .foregroundColor(Theme.accent)
+                .frame(width: 24, alignment: .leading)
 
-                Spacer()
+            VStack(alignment: .leading, spacing: Theme.spacingSM) {
+                TextField(
+                    text: $step.instruction,
+                    prompt: Text("What to do").foregroundColor(Theme.ink3),
+                    axis: .vertical
+                ) { Text("Step \(stepNumber)") }
+                    .font(.setting(16))
+                    .foregroundColor(Theme.ink)
+                    .tint(Theme.accent)
+                    .lineLimit(2...10)
+                    .focused($writing)
 
-                // Reorder buttons
-                HStack(spacing: FAFSpacing.xs) {
-                    if let moveUp = onMoveUp {
-                        Button { moveUp() } label: {
-                            Image(systemName: "chevron.up")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.fafGray)
-                                .frame(width: 32, height: 32)
-                                .background(Color.fafGrayXLight)
-                                .clipShape(Circle())
-                        }
-                    }
-
-                    if let moveDown = onMoveDown {
-                        Button { moveDown() } label: {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.fafGray)
-                                .frame(width: 32, height: 32)
-                                .background(Color.fafGrayXLight)
-                                .clipShape(Circle())
-                        }
-                    }
-                }
-
-                Button { onDelete() } label: {
-                    FAFIcon(.close, size: 18, color: .fafGray)
-                }
-            }
-
-            TextEditor(text: $step.instruction)
-                .font(FAFTypography.body)
-                .frame(minHeight: 60)
-                .padding(FAFSpacing.sm)
-                .background(Color.fafBackground)
-                .cornerRadius(FAFRadius.sm)
-                .overlay(
-                    RoundedRectangle(cornerRadius: FAFRadius.sm)
-                        .stroke(Color.fafDivider, lineWidth: 1)
-                )
-
-            VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                if !availableIngredients.isEmpty {
-                    Button {
-                        showIngredientPicker.toggle()
-                    } label: {
-                        HStack {
-                            FAFIcon(.plus, size: 14, color: .fafSage)
-                            Text(showIngredientPicker ? "Done adding" : "Add ingredients to this step")
-                                .font(FAFTypography.caption)
-                                .foregroundColor(.fafSage)
-                        }
-                    }
-                }
+                Rule(weight: writing ? 1.5 : 1, color: writing ? Theme.ink : Theme.rule)
 
                 if !selectedIngredients.isEmpty {
-                    FlowLayout(spacing: FAFSpacing.xs) {
+                    VStack(alignment: .leading, spacing: 0) {
                         ForEach(selectedIngredients) { ingredient in
-                            IngredientChip(ingredient: ingredient) {
-                                step.ingredientIds.removeAll { $0 == ingredient.id }
-                            }
+                            IngredientLine(ingredient, compact: true)
                         }
+                    }
+                    .padding(.leading, 10)
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(Theme.rule).frame(width: 1)
                     }
                 }
 
                 if showIngredientPicker {
-                    ingredientPickerView
+                    FlowLayout(spacing: 6) {
+                        ForEach(availableIngredients) { ingredient in
+                            let chosen = step.ingredientIds.contains(ingredient.id)
+                            Button {
+                                if chosen {
+                                    step.ingredientIds.removeAll { $0 == ingredient.id }
+                                } else {
+                                    step.ingredientIds.append(ingredient.id)
+                                }
+                            } label: {
+                                Text(ShoppingMath.shoppingName(ingredient.name))
+                                    .font(.setting(13))
+                                    .foregroundColor(chosen ? Theme.paper : Theme.ink)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 5)
+                                    .background(chosen ? Theme.ink : Color.clear)
+                                    .overlay(Rectangle().stroke(chosen ? Theme.ink : Theme.rule, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                // The step's own marks: what it uses, and where it goes.
+                HStack(spacing: Theme.spacingMD) {
+                    if !availableIngredients.isEmpty {
+                        MarginButton(showIngredientPicker ? "Done" : "Ingredients") {
+                            withAnimation(.easeOut(duration: 0.15)) { showIngredientPicker.toggle() }
+                        }
+                    }
+                    Spacer()
+                    if let onMoveUp {
+                        MarginButton("Up", action: onMoveUp)
+                    }
+                    if let onMoveDown {
+                        MarginButton("Down", action: onMoveDown)
+                    }
+                    MarginButton("Remove", action: onDelete)
                 }
             }
         }
-        .padding(FAFSpacing.md)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
-    }
-
-    private var ingredientPickerView: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-            Text("Select ingredients:")
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGray)
-
-            ForEach(availableIngredients) { ingredient in
-                let isSelected = step.ingredientIds.contains(ingredient.id)
-                Button {
-                    if isSelected {
-                        step.ingredientIds.removeAll { $0 == ingredient.id }
-                    } else {
-                        step.ingredientIds.append(ingredient.id)
-                    }
-                } label: {
-                    HStack {
-                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(isSelected ? .fafCoral : .fafGray)
-                        Text(ingredient.displayString)
-                            .font(FAFTypography.body)
-                            .foregroundColor(.fafTextPrimary)
-                        Spacer()
-                    }
-                    .padding(.vertical, FAFSpacing.xxs)
-                }
-            }
-        }
-        .padding(FAFSpacing.sm)
-        .background(Color.fafBackgroundTertiary)
-        .cornerRadius(FAFRadius.sm)
-    }
-}
-
-// MARK: - Ingredient Chip
-
-struct IngredientChip: View {
-    let ingredient: Ingredient
-    let onRemove: () -> Void
-
-    var body: some View {
-        HStack(spacing: FAFSpacing.xxs) {
-            Text(ingredient.displayString)
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafTextPrimary)
-            Button { onRemove() } label: {
-                FAFIcon(.close, size: 12, color: .fafGray)
-            }
-        }
-        .padding(.horizontal, FAFSpacing.sm)
-        .padding(.vertical, FAFSpacing.xxs)
-        .background(Color.fafSage.opacity(0.2))
-        .cornerRadius(FAFRadius.full)
+        .padding(.vertical, Theme.spacingSM)
     }
 }
 

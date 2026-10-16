@@ -21,51 +21,51 @@ struct AIRecipeGeneratorView: View {
     @State private var searchResults: [Recipe] = []
     @State private var isSearching = false
     @State private var hasSearched = false
+    @State private var openedRecipe: Recipe?
+
+    private var isBusy: Bool { aiService.isLoading || isSearching }
 
     var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: FAFSpacing.lg) {
-                    // Header
-                    headerSection
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.spacingXL) {
+                    PlateHeader(title: "Ask for a recipe", subtitle: "Written up by Claude")
 
-                    // Input Section
+                    Text("Name a dish and Claude writes it up — ingredients, method and all. The box is looked through first, in case it's already in there.")
+                        .font(.setting(15))
+                        .foregroundColor(Theme.ink2)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+
                     inputSection
 
-                    // Dietary Restrictions
                     restrictionsSection
 
-                    // Generate Button
                     generateButton
 
-                    // Search Results
                     if hasSearched && !searchResults.isEmpty {
                         searchResultsSection
                     }
                 }
-                .padding(FAFSpacing.lg)
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.fafBackground.ignoresSafeArea())
+            .background(Theme.paper)
+            .scrollDismissesKeyboard(.interactively)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        FAFIcon(.close, size: 20, color: .fafGrayDark)
-                    }
-                }
-                ToolbarItem(placement: .principal) {
-                    Text("AI Recipe Generator")
-                        .font(FAFTypography.h3)
-                        .foregroundColor(.fafTextPrimary)
+            .plainToolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    MarginButton("Cancel") { dismiss() }
                 }
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
+            }
+            .navigationDestination(item: $openedRecipe) { recipe in
+                RecipeDetailView(recipe: recipe)
             }
             .sheet(isPresented: $showCreateRecipe) {
                 if let recipe = generatedRecipe {
@@ -80,84 +80,33 @@ struct AIRecipeGeneratorView: View {
         }
     }
 
-    // MARK: - Header Section
-
-    private var headerSection: some View {
-        VStack(spacing: FAFSpacing.md) {
-            ZStack {
-                Circle()
-                    .fill(Color.fafSage.opacity(0.15))
-                    .frame(width: 72, height: 72)
-
-                Image(systemName: "sparkles")
-                    .font(.system(size: 32))
-                    .foregroundColor(.fafSage)
-            }
-
-            VStack(spacing: FAFSpacing.xs) {
-                Text("What would you like to cook?")
-                    .font(FAFTypography.h2)
-                    .foregroundColor(.fafTextPrimary)
-
-                Text("Describe a dish and Claude will create a complete recipe for you.")
-                    .font(FAFTypography.body)
-                    .foregroundColor(.fafGray)
-                    .multilineTextAlignment(.center)
-            }
-        }
-    }
-
     // MARK: - Input Section
 
     private var inputSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                Text("Recipe Idea")
-                    .font(FAFTypography.label)
-                    .foregroundColor(.fafGrayDark)
+        VStack(alignment: .leading, spacing: Theme.spacingLG) {
+            FieldLine(
+                label: "The dish",
+                text: $recipeIdea,
+                prompt: "beef stew, a quick pasta, something with leeks"
+            )
+            .submitLabel(.done)
 
-                TextField("e.g., beef stew, quick pasta, healthy salad", text: $recipeIdea)
-                    .font(FAFTypography.body)
-                    .padding(FAFSpacing.md)
-                    .background(Color.fafInputBackground)
-                    .cornerRadius(FAFRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FAFRadius.md)
-                            .stroke(Color.fafDivider, lineWidth: 1)
-                    )
-            }
-
-            VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                Text("Servings (optional)")
-                    .font(FAFTypography.label)
-                    .foregroundColor(.fafGrayDark)
-
-                TextField("e.g., 4", text: $servings)
-                    .font(FAFTypography.body)
-                    .keyboardType(.numberPad)
-                    .padding(FAFSpacing.md)
-                    .background(Color.fafInputBackground)
-                    .cornerRadius(FAFRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FAFRadius.md)
-                            .stroke(Color.fafDivider, lineWidth: 1)
-                    )
-            }
+            FieldLine(label: "Serves", text: $servings, prompt: "4", note: "optional")
+                .keyboardType(.numberPad)
+                .frame(width: 120)
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
     // MARK: - Restrictions Section
 
     private var restrictionsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text("Dietary Restrictions (optional)")
-                .font(FAFTypography.label)
-                .foregroundColor(.fafGrayDark)
+        VStack(alignment: .leading, spacing: Theme.spacingMD) {
+            SectionHead(
+                title: "Keep it",
+                figure: selectedRestrictions.isEmpty ? "optional" : "\(selectedRestrictions.count) chosen"
+            )
 
-            FlowLayout(spacing: FAFSpacing.sm) {
+            FlowLayout(spacing: 6) {
                 ForEach(DietaryRestriction.allCases) { restriction in
                     RestrictionChip(
                         restriction: restriction,
@@ -172,73 +121,61 @@ struct AIRecipeGeneratorView: View {
                 }
             }
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
     // MARK: - Generate Button
 
     private var generateButton: some View {
-        VStack(spacing: FAFSpacing.sm) {
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
             Button {
                 Task { await searchAndGenerate() }
             } label: {
-                HStack(spacing: FAFSpacing.sm) {
-                    if aiService.isLoading || isSearching {
+                HStack(spacing: Theme.spacingSM) {
+                    if isBusy {
                         ProgressView()
-                            .tint(.white)
-                    } else {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 18))
+                            .tint(Theme.paper)
                     }
-                    Text(aiService.isLoading ? "Generating..." : isSearching ? "Searching..." : "Generate Recipe")
-                        .font(FAFTypography.button)
+                    Text(aiService.isLoading ? "Writing it up…" : isSearching ? "Looking in the box…" : "Ask for a recipe")
                 }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, FAFSpacing.md)
-                .background(recipeIdea.isEmpty ? Color.fafGray : Color.fafSage)
-                .cornerRadius(FAFRadius.md)
             }
-            .disabled(recipeIdea.isEmpty || aiService.isLoading || isSearching)
+            .buttonStyle(.press)
+            .disabled(recipeIdea.trimmingCharacters(in: .whitespaces).isEmpty || isBusy)
 
-            Text("We'll first search existing recipes, then generate if needed")
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGray)
+            Text("Recipes already in the box are shown first; if there's none, a new one is written.")
+                .font(.setting(12).italic())
+                .foregroundColor(Theme.ink3)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     // MARK: - Search Results Section
 
     private var searchResultsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            HStack {
-                Text("Existing Recipes Found")
-                    .font(FAFTypography.h3)
-                    .foregroundColor(.fafTextPrimary)
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHead(title: "Already in the box", figure: "\(searchResults.count)")
+                .padding(.bottom, 2)
 
-                Spacer()
-
-                Button {
-                    Task { await generateNewRecipe() }
-                } label: {
-                    Text("Generate New Instead")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafSage)
+            ForEach(Array(searchResults.enumerated()), id: \.element.id) { index, recipe in
+                if index > 0 {
+                    DashedDivider()
                 }
-            }
-
-            ForEach(searchResults) { recipe in
                 ExistingRecipeCard(recipe: recipe) {
-                    // User selected an existing recipe - could navigate to it
-                    dismiss()
+                    openedRecipe = recipe
                 }
             }
+
+            Rule()
+
+            HStack {
+                Spacer()
+                MarginButton("Write a new one instead") {
+                    Task { await generateNewRecipe() }
+                }
+                .disabled(isBusy)
+                .opacity(isBusy ? 0.35 : 1)
+            }
+            .padding(.top, Theme.spacingMD)
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
     // MARK: - Actions
@@ -264,7 +201,7 @@ struct AIRecipeGeneratorView: View {
         let lowercaseQuery = query.lowercased()
 
         // Combine all available recipes
-        let allRecipes = recipeService.globalRecipes + recipeService.friendsRecipes + recipeService.userRecipes
+        let allRecipes = recipeService.globalRecipes.unblocked + recipeService.friendsRecipes.unblocked + recipeService.userRecipes
 
         // Simple search - title or tags contain query
         let matches = allRecipes.filter { recipe in
@@ -305,6 +242,7 @@ struct AIRecipeGeneratorView: View {
 
 // MARK: - Restriction Chip
 
+/// A dietary need, set as a small-caps word in a ruled square — inked in when chosen.
 struct RestrictionChip: View {
     let restriction: DietaryRestriction
     let isSelected: Bool
@@ -312,82 +250,42 @@ struct RestrictionChip: View {
 
     var body: some View {
         Button(action: action) {
-            Text(restriction.displayName)
-                .font(FAFTypography.caption)
-                .foregroundColor(isSelected ? .white : .fafTextPrimary)
-                .padding(.horizontal, FAFSpacing.md)
-                .padding(.vertical, FAFSpacing.sm)
-                .background(isSelected ? Color.fafSage : Color.fafBackgroundSecondary)
-                .cornerRadius(FAFRadius.full)
-                .overlay(
-                    RoundedRectangle(cornerRadius: FAFRadius.full)
-                        .stroke(isSelected ? Color.fafSage : Color.fafDivider, lineWidth: 1)
-                )
+            Text(restriction.displayName.uppercased())
+                .smallCaps(11, weight: .semibold, tracking: 1.2)
+                .foregroundColor(isSelected ? Theme.paper : Theme.ink2)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(isSelected ? Theme.ink : Color.clear)
+                .overlay(Rectangle().stroke(isSelected ? Theme.ink : Theme.rule, lineWidth: 1))
         }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
 // MARK: - Existing Recipe Card
 
+/// A recipe already in the box, set as an index line: the name in the serif,
+/// whose it is underneath, the time opposite.
 struct ExistingRecipeCard: View {
     let recipe: Recipe
     let onSelect: () -> Void
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: FAFSpacing.md) {
-                // Recipe image or placeholder
-                if let imageURL = recipe.firstImageURL, let url = URL(string: imageURL) {
-                    AsyncImage(url: url) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Color.fafGrayXLight
-                    }
-                    .frame(width: 60, height: 60)
-                    .cornerRadius(FAFRadius.sm)
-                } else {
-                    ZStack {
-                        Color.fafGrayXLight
-                        Image(systemName: "fork.knife")
-                            .foregroundColor(.fafGray)
-                    }
-                    .frame(width: 60, height: 60)
-                    .cornerRadius(FAFRadius.sm)
-                }
-
-                VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-                    Text(recipe.title)
-                        .font(FAFTypography.bodyBold)
-                        .foregroundColor(.fafTextPrimary)
-                        .lineLimit(1)
-
-                    if let author = recipe.authorUsername {
-                        Text("by @\(author)")
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafGray)
-                    }
-
-                    if let time = recipe.totalTimeMinutes {
-                        HStack(spacing: FAFSpacing.xxs) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 12))
-                            Text("\(time) min")
-                                .font(FAFTypography.caption)
-                        }
-                        .foregroundColor(.fafGrayLight)
-                    }
-                }
-
-                Spacer()
-
-                FAFIcon(.forward, size: 16, color: .fafGrayLight)
+            IndexEntry(
+                title: recipe.title,
+                subtitle: recipe.authorUsername.map { "From the kitchen of @\($0)" },
+                figure: recipe.totalTimeMinutes?.printedMinutes ?? "—",
+                figureColor: recipe.totalTimeMinutes == nil ? Theme.ink3 : Theme.accent,
+                serifTitle: true
+            ) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Theme.ink3)
             }
-            .padding(FAFSpacing.md)
-            .background(Color.fafBackgroundSecondary)
-            .cornerRadius(FAFRadius.md)
         }
+        .buttonStyle(.plain)
     }
 }
 

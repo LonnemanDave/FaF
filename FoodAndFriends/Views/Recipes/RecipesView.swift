@@ -1,84 +1,89 @@
 import SwiftUI
 
+/// Recipes — the index at the back of the cookbook. Your recipes, your
+/// friends', or everyone's, set A to Z under letter heads, each with its
+/// time carried across on a dot leader. Search finds a recipe by its name,
+/// what's in it, or how it's tagged.
 struct RecipesView: View {
     @ObservedObject var userService = UserService.shared
     @ObservedObject var recipeService = RecipeService.shared
-    @ObservedObject var friendService = FriendService.shared
     @ObservedObject var aiService = AIService.shared
+    @ObservedObject var moderation = ModerationService.shared
 
     @State private var selectedFilter: RecipeFilter = .mine
+    @State private var query = ""
     @State private var showCreateRecipe = false
     @State private var showAIGenerator = false
 
     enum RecipeFilter: String, CaseIterable {
-        case global = "Global"
-        case friends = "Friends"
         case mine = "Mine"
+        case friends = "Friends"
+        case global = "Everyone"
     }
 
+    private func recipes(for filter: RecipeFilter) -> [Recipe] {
+        switch filter {
+        case .mine: return recipeService.userRecipes
+        case .friends: return recipeService.friendsRecipes.unblocked
+        case .global: return recipeService.globalRecipes.unblocked
+        }
+    }
+
+    /// The chosen shelf, narrowed by the search.
     private var displayedRecipes: [Recipe] {
-        switch selectedFilter {
-        case .global:
-            return recipeService.globalRecipes
-        case .friends:
-            return recipeService.friendsRecipes
-        case .mine:
-            return recipeService.userRecipes
+        let shelf = recipes(for: selectedFilter)
+        let words = query.lowercased().split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return shelf }
+        return shelf.filter { recipe in
+            let haystack = ([recipe.title, recipe.description] + recipe.tags + recipe.ingredients.map(\.name))
+                .joined(separator: " ")
+                .lowercased()
+            return words.allSatisfy(haystack.contains)
+        }
+    }
+
+    /// A to Z under letter heads; anything not starting with a letter under "#".
+    private var letters: [(letter: String, recipes: [Recipe])] {
+        Dictionary(grouping: displayedRecipes) { recipe -> String in
+            guard let first = recipe.title.trimmingCharacters(in: .whitespaces).first, first.isLetter else { return "#" }
+            return String(first).uppercased()
+        }
+        .map { (letter: $0.key, recipes: $0.value.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }) }
+        .sorted { lhs, rhs in
+            lhs.letter == "#" ? false : (rhs.letter == "#" ? true : lhs.letter < rhs.letter)
         }
     }
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color.fafBackground
-                    .ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.spacingLG) {
+                    plate
 
-                VStack(spacing: 0) {
-                    filterTabs
-                        .padding(.horizontal, FAFSpacing.lg)
-                        .padding(.vertical, FAFSpacing.sm)
-
-                    Group {
-                        if recipeService.isLoading {
-                            RecipesLoadingView()
-                        } else if displayedRecipes.isEmpty {
-                            EmptyRecipesView(filter: selectedFilter, onCreateRecipe: { showCreateRecipe = true })
-                        } else {
-                            RecipesList(recipes: displayedRecipes)
+                    VStack(alignment: .leading, spacing: Theme.spacingMD) {
+                        IndexSelector(
+                            options: RecipeFilter.allCases.map { (value: $0, label: $0.rawValue) },
+                            selection: $selectedFilter
+                        ) {
+                            Text("\(recipes(for: selectedFilter).count)")
+                                .font(.figure(11, .medium))
+                                .foregroundColor(Theme.ink3)
+                                .padding(.bottom, 7)
                         }
+                        SearchLine(placeholder: "A recipe, an ingredient, a tag", text: $query)
                     }
+
+                    index
                 }
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .navigationTitle("Recipes")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        Task { await seedBeefStew() }
-                    } label: {
-                        Text("Seed")
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafGray)
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: FAFSpacing.md) {
-                        if aiService.hasValidAPIKey {
-                            Button {
-                                showAIGenerator = true
-                            } label: {
-                                Image(systemName: "sparkles")
-                                    .font(.system(size: 18))
-                                    .foregroundColor(.fafSage)
-                            }
-                        }
-                        Button {
-                            showCreateRecipe = true
-                        } label: {
-                            FAFIcon(.plus, size: 20, color: .fafCoral)
-                        }
-                    }
-                }
+            .background(Theme.paper)
+            .toolbar(.hidden, for: .navigationBar)
+            .scrollDismissesKeyboard(.immediately)
+            .navigationDestination(for: Recipe.self) { recipe in
+                RecipeDetailView(recipe: recipe)
             }
             .sheet(isPresented: $showCreateRecipe) {
                 CreateRecipeView()
@@ -89,243 +94,141 @@ struct RecipesView: View {
         }
     }
 
-    private var filterTabs: some View {
-        HStack(spacing: FAFSpacing.sm) {
-            ForEach(RecipeFilter.allCases, id: \.self) { filter in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        selectedFilter = filter
+    // MARK: - Plate
+
+    private var plusMark: some View {
+        Image(systemName: "plus")
+            .font(.system(size: 17, weight: .medium))
+            .foregroundColor(Theme.ink)
+            .frame(width: 36, height: 36, alignment: .trailing)
+            .contentShape(Rectangle())
+    }
+
+    private var plate: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DoubleRule()
+                .padding(.bottom, 12)
+
+            HStack(alignment: .firstTextBaseline) {
+                Text("Recipes")
+                    .font(.plate(32))
+                    .foregroundColor(Theme.ink)
+
+                Spacer(minLength: Theme.spacingSM)
+
+                // With the assistant, + offers a choice; without it, + just opens the form.
+                if aiService.hasValidAPIKey {
+                    Menu {
+                        Button {
+                            showCreateRecipe = true
+                        } label: {
+                            Label("Write a recipe", systemImage: "square.and.pencil")
+                        }
+                        Button {
+                            showAIGenerator = true
+                        } label: {
+                            Label("Ask for a recipe", systemImage: "sparkles")
+                        }
+                    } label: {
+                        plusMark
                     }
-                } label: {
-                    Text(filter.rawValue)
-                        .font(FAFTypography.button)
-                        .foregroundColor(selectedFilter == filter ? .fafWhite : .fafGray)
-                        .padding(.horizontal, FAFSpacing.md)
-                        .padding(.vertical, FAFSpacing.xs)
-                        .background(
-                            Capsule()
-                                .fill(selectedFilter == filter ? Color.fafCoral : Color.fafGrayXLight)
-                        )
+                    .accessibilityLabel("Add a recipe")
+                } else {
+                    Button {
+                        showCreateRecipe = true
+                    } label: {
+                        plusMark
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add a recipe")
                 }
             }
-            Spacer()
+
+            Text(edition.uppercased())
+                .smallCaps(10, weight: .medium, tracking: 1.4)
+                .foregroundColor(Theme.ink2)
+                .padding(.top, 4)
+
+            Rule()
+                .padding(.top, 12)
+        }
+        .padding(.top, Theme.spacingSM)
+    }
+
+    /// The line under the title — how full the box is.
+    private var edition: String {
+        let count = recipeService.userRecipes.count
+        switch count {
+        case 0: return "The recipe box · empty so far"
+        case 1: return "The recipe box · 1 written down"
+        default: return "The recipe box · \(count) written down"
         }
     }
 
-    private func seedBeefStew() async {
-        guard let user = userService.currentUser else { return }
-        do {
-            try await recipeService.seedBeefStewRecipe(author: user)
-            // Listeners will automatically update the UI
-        } catch {
-            print("Error seeding beef stew: \(error)")
-        }
-    }
-}
+    // MARK: - The index
 
-// MARK: - Recipes List
+    @ViewBuilder
+    private var index: some View {
+        if recipeService.isLoading && displayedRecipes.isEmpty {
+            ProgressView()
+                .tint(Theme.ink3)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.spacingXL)
+        } else if displayedRecipes.isEmpty {
+            emptyLeaf
+        } else {
+            VStack(alignment: .leading, spacing: Theme.spacingMD) {
+                ForEach(letters, id: \.letter) { chapter in
+                    VStack(alignment: .leading, spacing: 0) {
+                        SectionHead(title: chapter.letter, figure: "\(chapter.recipes.count)")
+                            .padding(.bottom, 2)
+                        ForEach(Array(chapter.recipes.enumerated()), id: \.element.id) { position, recipe in
+                            NavigationLink(value: recipe) {
+                                IndexEntry(
+                                    title: recipe.title,
+                                    subtitle: subtitle(for: recipe),
+                                    figure: recipe.totalTimeMinutes?.printedMinutes ?? "—",
+                                    serifTitle: true
+                                )
+                            }
+                            .buttonStyle(.plain)
 
-struct RecipesList: View {
-    let recipes: [Recipe]
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(spacing: FAFSpacing.md) {
-                ForEach(recipes) { recipe in
-                    RecipeRowCard(recipe: recipe)
-                }
-            }
-            .padding(.horizontal, FAFSpacing.lg)
-            .padding(.vertical, FAFSpacing.md)
-        }
-    }
-}
-
-struct RecipeRowCard: View {
-    let recipe: Recipe
-
-    var body: some View {
-        NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
-            HStack(spacing: FAFSpacing.md) {
-                // Recipe image
-                Group {
-                    if let imageURL = recipe.firstImageURL, let url = URL(string: imageURL) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            case .failure, .empty:
-                                recipePlaceholder
-                            @unknown default:
-                                recipePlaceholder
+                            if position < chapter.recipes.count - 1 {
+                                DashedDivider()
                             }
                         }
-                    } else {
-                        recipePlaceholder
                     }
                 }
-                .frame(width: 80, height: 80)
-                .clipShape(RoundedRectangle(cornerRadius: FAFRadius.sm))
-
-                VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                    Text(recipe.title)
-                        .font(FAFTypography.bodyBold)
-                        .foregroundColor(.fafTextPrimary)
-                        .lineLimit(2)
-
-                    if !recipe.description.isEmpty {
-                        Text(recipe.description)
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafGray)
-                            .lineLimit(2)
-                    }
-
-                    HStack(spacing: FAFSpacing.md) {
-                        if let time = recipe.totalTimeMinutes {
-                            Label("\(time) min", systemImage: "clock")
-                                .font(FAFTypography.caption)
-                                .foregroundColor(.fafGray)
-                        }
-
-                        if let servings = recipe.servings {
-                            Label("\(servings)", systemImage: "person.2")
-                                .font(FAFTypography.caption)
-                                .foregroundColor(.fafGray)
-                        }
-                    }
-                }
-
-                Spacer()
             }
-            .padding(FAFSpacing.md)
-            .background(Color.fafCardBackground)
-            .cornerRadius(FAFRadius.md)
         }
-        .buttonStyle(.plain)
     }
 
-    private var recipePlaceholder: some View {
-        Rectangle()
-            .fill(Color.fafGrayXLight)
-            .overlay(
-                FAFIcon(.fork, size: 24, color: .fafGray)
-            )
+    /// Under the name: the recipe's own line — and whose it is, when it isn't yours.
+    private func subtitle(for recipe: Recipe) -> String? {
+        let mine = recipe.authorId == userService.currentUser?.id
+        let author = mine ? nil : recipe.authorUsername.map { "@\($0)" }
+        let description = recipe.description.isEmpty ? nil : recipe.description
+        let parts = [author, description].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
-}
 
-// MARK: - Empty State
-
-struct EmptyRecipesView: View {
-    let filter: RecipesView.RecipeFilter
-    var onCreateRecipe: (() -> Void)? = nil
-
-    var body: some View {
-        VStack(spacing: FAFSpacing.lg) {
-            Spacer()
-
-            VStack(spacing: FAFSpacing.md) {
-                Image(systemName: iconName)
-                    .font(.system(size: 64))
-                    .foregroundColor(.fafGrayLight)
-
-                Text(titleText)
-                    .font(FAFTypography.h2)
-                    .foregroundColor(.fafTextPrimary)
-
-                Text(subtitleText)
-                    .font(FAFTypography.body)
-                    .foregroundColor(.fafGray)
-                    .multilineTextAlignment(.center)
+    @ViewBuilder
+    private var emptyLeaf: some View {
+        if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+            BlankLeaf(note: "Nothing in \(selectedFilter == .mine ? "your box" : "here") for \"\(query)\".")
+        } else {
+            switch selectedFilter {
+            case .mine:
+                BlankLeaf(
+                    note: "No recipes written down yet.",
+                    action: (label: "Write one", run: { showCreateRecipe = true })
+                )
+            case .friends:
+                BlankLeaf(note: "When friends write down a recipe, it's filed here.")
+            case .global:
+                BlankLeaf(note: "No one has shared a recipe with everyone yet.")
             }
-
-            if filter == .mine {
-                Button {
-                    onCreateRecipe?()
-                } label: {
-                    HStack(spacing: FAFSpacing.sm) {
-                        FAFIcon(.plus, size: 16, color: .fafWhite)
-                        Text("Create Recipe")
-                            .font(FAFTypography.button)
-                    }
-                    .foregroundColor(.fafWhite)
-                    .padding(.horizontal, FAFSpacing.xl)
-                    .padding(.vertical, FAFSpacing.md)
-                    .background(Color.fafCoral)
-                    .cornerRadius(FAFRadius.md)
-                }
-            }
-
-            Spacer()
         }
-        .padding(FAFSpacing.lg)
-    }
-
-    private var iconName: String {
-        switch filter {
-        case .global: return "globe"
-        case .friends: return "person.2"
-        case .mine: return "fork.knife"
-        }
-    }
-
-    private var titleText: String {
-        switch filter {
-        case .global: return "No Public Recipes"
-        case .friends: return "No Friend Recipes"
-        case .mine: return "No Recipes Yet"
-        }
-    }
-
-    private var subtitleText: String {
-        switch filter {
-        case .global: return "Be the first to share a recipe\nwith the community"
-        case .friends: return "Your friends haven't shared\nany recipes yet"
-        case .mine: return "Start building your recipe collection\nby adding your first recipe"
-        }
-    }
-}
-
-// MARK: - Loading State
-
-struct RecipesLoadingView: View {
-    var body: some View {
-        ScrollView {
-            VStack(spacing: FAFSpacing.md) {
-                ForEach(0..<5, id: \.self) { _ in
-                    HStack(spacing: FAFSpacing.md) {
-                        RoundedRectangle(cornerRadius: FAFRadius.sm)
-                            .fill(Color.fafGrayXLight)
-                            .frame(width: 80, height: 80)
-
-                        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.fafGrayXLight)
-                                .frame(height: 16)
-                                .frame(maxWidth: 150)
-
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.fafGrayXXLight)
-                                .frame(height: 12)
-
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.fafGrayXXLight)
-                                .frame(height: 12)
-                                .frame(maxWidth: 100)
-                        }
-
-                        Spacer()
-                    }
-                    .padding(FAFSpacing.md)
-                    .background(Color.fafCardBackground)
-                    .cornerRadius(FAFRadius.md)
-                }
-            }
-            .padding(.horizontal, FAFSpacing.lg)
-            .padding(.vertical, FAFSpacing.md)
-        }
-        .redacted(reason: .placeholder)
     }
 }
 

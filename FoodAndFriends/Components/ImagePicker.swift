@@ -31,13 +31,13 @@ struct ProfileImagePicker: View {
 
             // Camera button - tap to change photo
             PhotosPicker(selection: $selectedItem, matching: .images) {
-                Circle()
-                    .fill(Color.fafCoral)
-                    .frame(width: 32, height: 32)
+                Rectangle()
+                    .fill(Theme.ink)
+                    .frame(width: 30, height: 30)
                     .overlay(
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white)
+                        Image(systemName: "camera")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.paper)
                     )
             }
             .offset(x: 4, y: 4)
@@ -77,7 +77,7 @@ struct ProfileImagePicker: View {
                 .resizable()
                 .scaledToFill()
                 .frame(width: size, height: size)
-                .clipShape(Circle())
+                .clipShape(Rectangle())
         } else if let urlString = currentImageURL, let url = URL(string: urlString) {
             AsyncImage(url: url) { phase in
                 switch phase {
@@ -94,19 +94,22 @@ struct ProfileImagePicker: View {
                 }
             }
             .frame(width: size, height: size)
-            .clipShape(Circle())
+            .clipShape(Rectangle())
         } else {
             placeholderView
         }
     }
 
     private var placeholderView: some View {
-        Circle()
-            .fill(Color.fafGrayXLight)
+        Rectangle()
+            .fill(Theme.fill)
             .frame(width: size, height: size)
             .overlay(
-                FAFIcon(.profile, size: size * 0.4, color: .fafGray)
+                Image(systemName: "person")
+                    .font(.system(size: size * 0.32, weight: .light))
+                    .foregroundColor(Theme.ink3)
             )
+            .overlay(Rectangle().stroke(Theme.rule, lineWidth: 1))
     }
 }
 

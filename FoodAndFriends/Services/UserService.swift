@@ -1,5 +1,6 @@
 import Foundation
 import FirebaseFirestore
+import FirebaseFunctions
 
 enum UserServiceError: LocalizedError {
     case usernameTaken
@@ -155,7 +156,36 @@ class UserService: ObservableObject {
     }
 
     // Legacy - use stopListening() instead
+    /// Remembers which Kroger store to shop at.
+    func setKrogerStore(id: String, name: String) async throws {
+        guard let userId = currentUser?.id else { throw UserServiceError.userNotFound }
+        currentUser?.krogerLocationId = id
+        currentUser?.krogerStoreName = name
+        #if DEBUG
+        if DesignHarness.isOn { return }
+        #endif
+        try await db.collection(usersCollection).document(userId).updateData([
+            "krogerLocationId": id,
+            "krogerStoreName": name,
+            "updatedAt": Date(),
+        ])
+    }
+
     func clearCurrentUser() {
         stopListening()
+    }
+
+    // MARK: - Account Deletion
+
+    /// Deletes the signed-in account and everything in it — profile, recipes,
+    /// menus, shopping lists, photos, friendships — through the
+    /// `deleteAccount` function (admin rights, so no fresh sign-in needed),
+    /// then signs out locally so the app returns to the sign-in screen.
+    func deleteAccount() async throws {
+        _ = try await Functions.functions().httpsCallable("deleteAccount").call()
+
+        // The server has already removed the sign-in; drop the local session.
+        // If that local step stumbles, the account is gone regardless.
+        try? AuthManager.shared.signOut()
     }
 }

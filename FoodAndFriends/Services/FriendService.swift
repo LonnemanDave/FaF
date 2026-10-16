@@ -6,6 +6,7 @@ enum FriendServiceError: LocalizedError {
     case alreadyFriends
     case requestAlreadySent
     case cannotAddSelf
+    case requestExpired
     case firestoreError(Error)
 
     var errorDescription: String? {
@@ -18,6 +19,8 @@ enum FriendServiceError: LocalizedError {
             return "Friend request already sent"
         case .cannotAddSelf:
             return "You cannot add yourself as a friend"
+        case .requestExpired:
+            return "That request is too old to accept — ask them to send a new one."
         case .firestoreError(let error):
             return error.localizedDescription
         }
@@ -48,6 +51,7 @@ class FriendService: ObservableObject {
     func startListening(userId: String) {
         stopListening()
         currentUserId = userId
+        ModerationService.shared.startListening(userId: userId)
 
         // Listen for pending requests (incoming)
         pendingRequestsListener = db.collection(friendRequestsCollection)
@@ -88,6 +92,7 @@ class FriendService: ObservableObject {
     }
 
     func stopListening() {
+        ModerationService.shared.stopListening()
         pendingRequestsListener?.remove()
         sentRequestsListener?.remove()
         friendsListener?.remove()
@@ -168,10 +173,24 @@ class FriendService: ObservableObject {
             .limit(to: 20)
             .getDocuments()
 
+        let blocked = ModerationService.shared.blockedIds
         return snapshot.documents.compactMap { doc in
             try? doc.data(as: FAFUser.self)
         }
+        .filter { !blocked.contains($0.id ?? "") }
     }
+
+    /// Drops someone from every local list at once — after blocking them.
+    func forget(_ userId: String) {
+        friends.removeAll { $0.id == userId }
+        pendingRequests.removeAll { $0.fromUserId == userId }
+        sentRequests.removeAll { $0.toUserId == userId }
+    }
+
+    /// A request's document id is who it's from and who it's to, so the
+    /// rules can find it: accepting one is what lets you add yourself to
+    /// the sender's friends, and nothing else does.
+    static func requestId(from: String, to: String) -> String { "\(from)_\(to)" }
 
     // MARK: - Friend Requests
 
@@ -188,22 +207,21 @@ class FriendService: ObservableObject {
             throw FriendServiceError.alreadyFriends
         }
 
-        // Check for existing pending request (either direction)
-        let existingRequest = try await db.collection(friendRequestsCollection)
-            .whereField("status", isEqualTo: FriendRequestStatus.pending.rawValue)
-            .getDocuments()
+        // A pending request either way between just these two
+        let requests = db.collection(friendRequestsCollection)
+        let pending = FriendRequestStatus.pending.rawValue
+        let outgoing = try await requests.whereField("fromUserId", isEqualTo: currentUserId)
+            .whereField("toUserId", isEqualTo: targetUserId)
+            .whereField("status", isEqualTo: pending).getDocuments()
+        let incoming = try await requests.whereField("fromUserId", isEqualTo: targetUserId)
+            .whereField("toUserId", isEqualTo: currentUserId)
+            .whereField("status", isEqualTo: pending).getDocuments()
 
-        let hasPendingRequest = existingRequest.documents.contains { doc in
-            guard let request = try? doc.data(as: FriendRequest.self) else { return false }
-            return (request.fromUserId == currentUserId && request.toUserId == targetUserId) ||
-                   (request.fromUserId == targetUserId && request.toUserId == currentUserId)
-        }
-
-        if hasPendingRequest {
+        if !outgoing.isEmpty || !incoming.isEmpty {
             throw FriendServiceError.requestAlreadySent
         }
 
-        // Create friend request
+        // Create (or renew a declined) friend request
         let request = FriendRequest(
             fromUserId: currentUserId,
             toUserId: targetUserId,
@@ -211,11 +229,20 @@ class FriendService: ObservableObject {
             createdAt: Date()
         )
 
-        try db.collection(friendRequestsCollection).addDocument(from: request)
+        try await requests.document(Self.requestId(from: currentUserId, to: targetUserId))
+            .setData(from: request)
     }
 
     func acceptFriendRequest(_ request: FriendRequest) async throws {
         guard let requestId = request.id else { return }
+
+        // Requests from before ids meant anything can't be proved to the
+        // rules — clear it away and ask for a fresh one.
+        guard requestId == Self.requestId(from: request.fromUserId, to: request.toUserId) else {
+            try? await db.collection(friendRequestsCollection).document(requestId).delete()
+            pendingRequests.removeAll { $0.id == requestId }
+            throw FriendServiceError.requestExpired
+        }
 
         let batch = db.batch()
 

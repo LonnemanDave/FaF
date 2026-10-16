@@ -160,7 +160,9 @@ class RecipeService: ObservableObject {
         newRecipe.authorUsername = author.username
         newRecipe.authorProfileImageURL = author.profileImageURL
 
-        let docRef = try db.collection(recipesCollection).addDocument(from: newRecipe)
+        // Wait for the server to have it — see MealPlanService.createMealPlan.
+        let docRef = db.collection(recipesCollection).document()
+        try await docRef.setData(Firestore.Encoder().encode(newRecipe))
 
         // Create activity for feed
         let activity = Activity(
@@ -176,10 +178,8 @@ class RecipeService: ObservableObject {
         )
         try db.collection(activitiesCollection).addDocument(from: activity)
 
-        // Fetch and return created recipe
-        guard let created = try await fetchRecipe(id: docRef.documentID) else {
-            throw RecipeServiceError.recipeNotFound
-        }
+        var created = newRecipe
+        created.id = docRef.documentID
 
         // Add to local cache
         userRecipes.insert(created, at: 0)
@@ -196,6 +196,9 @@ class RecipeService: ObservableObject {
     }
 
     func fetchUserRecipes(userId: String) async {
+        #if DEBUG
+        if DesignHarness.isOn { return } // the gallery's sample kitchen stays put
+        #endif
         isLoading = true
         defer { isLoading = false }
 
@@ -213,7 +216,10 @@ class RecipeService: ObservableObject {
         }
     }
 
-    func fetchRecipes(by userIds: [String], limit: Int = 20) async throws -> [Recipe] {
+    /// `publicOnly` for cooks who aren't your friends — the rules only let
+    /// you see what they've shared with everyone, so the query has to ask
+    /// for exactly that.
+    func fetchRecipes(by userIds: [String], limit: Int = 20, publicOnly: Bool = false) async throws -> [Recipe] {
         guard !userIds.isEmpty else { return [] }
 
         // Batch into groups of 30 (Firestore whereIn limit)
@@ -221,8 +227,12 @@ class RecipeService: ObservableObject {
         var allRecipes: [Recipe] = []
 
         for batch in batches {
-            let snapshot = try await db.collection(recipesCollection)
+            var query: Query = db.collection(recipesCollection)
                 .whereField("authorId", in: batch)
+            if publicOnly {
+                query = query.whereField("isPublic", isEqualTo: true)
+            }
+            let snapshot = try await query
                 .order(by: "createdAt", descending: true)
                 .limit(to: limit)
                 .getDocuments()
@@ -290,6 +300,17 @@ class RecipeService: ObservableObject {
     }
 
     // MARK: - Update
+
+    /// Just the steps — for step photographs, without touching anything else.
+    func updateSteps(_ steps: [RecipeStep], recipeId: String) async throws {
+        try await db.collection(recipesCollection).document(recipeId).updateData([
+            "steps": try steps.map { try Firestore.Encoder().encode($0) },
+            "updatedAt": Date(),
+        ])
+        if let index = userRecipes.firstIndex(where: { $0.id == recipeId }) {
+            userRecipes[index].steps = steps
+        }
+    }
 
     func updateRecipe(_ recipe: Recipe) async throws {
         guard let recipeId = recipe.id else {
@@ -600,100 +621,4 @@ class RecipeService: ObservableObject {
         try db.collection(activitiesCollection).addDocument(from: activity)
     }
 
-    // MARK: - Seed Data (Debug)
-
-    func seedBeefStewRecipe(author: FAFUser) async throws {
-        guard let authorId = author.id else {
-            throw RecipeServiceError.invalidData
-        }
-
-        // Delete existing beef stew recipes by this author
-        let existing = try await db.collection(recipesCollection)
-            .whereField("authorId", isEqualTo: authorId)
-            .whereField("title", isEqualTo: "Classic Beef Stew")
-            .getDocuments()
-
-        for doc in existing.documents {
-            try await doc.reference.delete()
-        }
-
-        // Create ingredients with IDs we can reference
-        let beefChuck = Ingredient(name: "beef chuck, cubed", quantity: "2", unit: "lbs")
-        let potatoes = Ingredient(name: "potatoes, quartered", quantity: "4", unit: "medium")
-        let carrots = Ingredient(name: "carrots, sliced", quantity: "3", unit: "large")
-        let onion = Ingredient(name: "onion, diced", quantity: "1", unit: "large")
-        let beefBroth = Ingredient(name: "beef broth", quantity: "4", unit: "cups")
-        let tomatoPaste = Ingredient(name: "tomato paste", quantity: "2", unit: "tbsp")
-        let garlic = Ingredient(name: "garlic, minced", quantity: "4", unit: "cloves")
-        let thyme = Ingredient(name: "dried thyme", quantity: "1", unit: "tsp")
-        let salt = Ingredient(name: "salt", quantity: "1", unit: "tsp")
-        let pepper = Ingredient(name: "black pepper", quantity: "1/2", unit: "tsp")
-        let oliveOil = Ingredient(name: "olive oil", quantity: "2", unit: "tbsp")
-        let flour = Ingredient(name: "flour", quantity: "3", unit: "tbsp")
-
-        let allIngredients = [beefChuck, potatoes, carrots, onion, beefBroth, tomatoPaste, garlic, thyme, salt, pepper, oliveOil, flour]
-
-        // Create steps with per-step ingredients
-        let steps = [
-            RecipeStep(
-                instruction: "Cut beef into 1-inch cubes and season with salt and pepper. Toss with flour to coat.",
-                ingredientIds: [beefChuck.id, salt.id, pepper.id, flour.id],
-                orderIndex: 0
-            ),
-            RecipeStep(
-                instruction: "Heat olive oil in a large Dutch oven over medium-high heat. Brown beef in batches, about 3 minutes per side. Set aside.",
-                ingredientIds: [oliveOil.id],
-                orderIndex: 1
-            ),
-            RecipeStep(
-                instruction: "Add onions and garlic to the pot, cook until softened, about 3 minutes.",
-                ingredientIds: [onion.id, garlic.id],
-                orderIndex: 2
-            ),
-            RecipeStep(
-                instruction: "Stir in tomato paste and cook for 1 minute until darkened.",
-                ingredientIds: [tomatoPaste.id],
-                orderIndex: 3
-            ),
-            RecipeStep(
-                instruction: "Add beef broth and thyme, scraping up any browned bits from the bottom.",
-                ingredientIds: [beefBroth.id, thyme.id],
-                orderIndex: 4
-            ),
-            RecipeStep(
-                instruction: "Return beef to pot, bring to a boil, then reduce heat to low. Cover and simmer for 1 hour.",
-                ingredientIds: [],
-                orderIndex: 5
-            ),
-            RecipeStep(
-                instruction: "Add potatoes and carrots, continue cooking covered for 30 minutes until vegetables are tender.",
-                ingredientIds: [potatoes.id, carrots.id],
-                orderIndex: 6
-            ),
-            RecipeStep(
-                instruction: "Season with additional salt and pepper to taste. Serve hot with crusty bread.",
-                ingredientIds: [],
-                orderIndex: 7
-            )
-        ]
-
-        let recipe = Recipe(
-            authorId: authorId,
-            title: "Classic Beef Stew",
-            description: "A hearty, warming beef stew with tender chunks of beef, potatoes, and vegetables in a rich savory broth.",
-            ingredients: allIngredients,
-            steps: steps,
-            isPublic: true,
-            imageURLs: [],
-            servings: 6,
-            prepTimeMinutes: 20,
-            cookTimeMinutes: 90,
-            tags: ["dinner", "comfort food", "beef", "stew", "one-pot"],
-            authorUsername: author.username,
-            authorProfileImageURL: author.profileImageURL
-        )
-
-        _ = try await createRecipe(recipe, author: author)
-        print("Beef stew recipe seeded successfully!")
-    }
 }

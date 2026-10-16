@@ -5,6 +5,31 @@ struct RecipeDetailView: View {
     @ObservedObject var recipeService = RecipeService.shared
     @ObservedObject var userService = UserService.shared
     @ObservedObject var friendService = FriendService.shared
+    @ObservedObject var moderation = ModerationService.shared
+    @State private var reportingVariation: ReportSubject?
+
+    // Step photographs — keyed by step id, saved with the recipe's steps.
+    @State private var stepPhotos: [String: [String]] = [:]
+    @State private var photoStep: RecipeStep?
+    @State private var pickerSource: PhotoSource?
+    @State private var stepImage: UIImage?
+    @State private var uploadingStepId: String?
+    @State private var viewingPhoto: ViewedStepPhoto?
+    @State private var showError = false
+    @State private var errorMessage = ""
+
+    private enum PhotoSource: String, Identifiable {
+        case camera, library
+        var id: String { rawValue }
+    }
+
+    private struct ViewedStepPhoto: Identifiable {
+        let url: String
+        let stepId: String
+        let caption: String
+        var id: String { url }
+    }
+    @ObservedObject var shoppingService = ShoppingListService.shared
 
     let recipe: Recipe
 
@@ -22,6 +47,12 @@ struct RecipeDetailView: View {
 
     // Variation editing
     @State private var showEditVariationSheet = false
+
+    /// Ingredients crossed off on this page — at the store or at the counter.
+    /// The reader's pencil, not the recipe's: not saved.
+    @State private var struck: Set<String> = []
+    /// "Added 12 to the list" — set after adding, cleared when the marks change.
+    @State private var addedNote: String?
 
     private var isOwner: Bool {
         userService.currentUser?.id == recipe.authorId
@@ -68,54 +99,62 @@ struct RecipeDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // Hero Image
-                recipeImage
+            VStack(alignment: .leading, spacing: Theme.spacingLG) {
+                photo
 
-                VStack(alignment: .leading, spacing: FAFSpacing.lg) {
-                    // Title & Meta
-                    headerSection
+                headerSection
 
-                    // Quick Stats
-                    statsSection
+                statsSection
 
-                    // Chef Selector (only show if variations exist)
-                    if !variations.isEmpty {
-                        chefSelectorSection
-                    }
-
-                    // Variation notes (if viewing a variation)
-                    if let variation = selectedVariation, !variation.notes.isEmpty {
-                        variationNotesSection(for: variation)
-                    }
-
-                    Divider()
-
-                    // Ingredients
-                    ingredientsSection
-
-                    Divider()
-
-                    // Instructions
-                    instructionsSection
-
-                    // Tags
-                    if !recipe.tags.isEmpty {
-                        Divider()
-                        tagsSection
-                    }
-
-                    // Add Variation Button (for non-owners who haven't added one yet)
-                    if !isOwner && !hasUserVariation {
-                        addVariationButton
-                    }
+                // Chef selector (only when friends have written variations)
+                if !variations.isEmpty {
+                    chefSelectorSection
                 }
-                .padding(FAFSpacing.lg)
+
+                // The chef's note, when reading a variation
+                if let variation = selectedVariation, !variation.notes.isEmpty {
+                    variationNotesSection(for: variation)
+                }
+
+                ingredientsSection
+
+                instructionsSection
+
+                if !recipe.tags.isEmpty {
+                    tagsSection
+                }
+
+                // Non-owners who haven't written their own take yet
+                if !isOwner && !hasUserVariation {
+                    addVariationButton
+                }
+            }
+            .padding(.top, Theme.spacingSM)
+            .padding(.bottom, Theme.spacingXL)
+            .page()
+        }
+        .background(Theme.paper)
+        .navigationBarTitleDisplayMode(.inline)
+        .backLeaf()
+        .plainToolbar {
+            if showEditButton {
+                ToolbarItem(placement: .topBarTrailing) {
+                    MarginButton("Edit") { handleEditTap() }
+                }
+            }
+            if !isOwner, let recipeId = recipe.id {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ModerationMenu(
+                        subject: ReportSubject(target: .recipe, targetId: recipeId, authorId: recipe.authorId,
+                                               authorUsername: recipe.authorUsername, label: recipe.title),
+                        onBlocked: { dismiss() }
+                    )
+                }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.fafBackground.ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $reportingVariation) { subject in
+            ReportSheet(subject: subject)
+        }
         .sheet(isPresented: $showEditSheet) {
             CreateRecipeView(recipeToEdit: recipe, onDelete: {
                 dismiss()
@@ -138,6 +177,41 @@ struct RecipeDetailView: View {
         .task {
             await loadVariations()
             currentImageURL = recipe.firstImageURL
+            stepPhotos = Dictionary(uniqueKeysWithValues: latestSteps.map { ($0.id, $0.photoURLs ?? []) })
+        }
+        .confirmationDialog(
+            "A photo for this step",
+            isPresented: Binding(get: { photoStep != nil && pickerSource == nil }, set: { if !$0 && pickerSource == nil { photoStep = nil } }),
+            titleVisibility: .visible
+        ) {
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button("Take a photo") { pickerSource = .camera }
+            }
+            Button("Choose from library") { pickerSource = .library }
+            Button("Cancel", role: .cancel) { photoStep = nil }
+        }
+        .fullScreenCover(item: $pickerSource) { source in
+            ImagePickerView(selectedImage: $stepImage, source: source == .camera ? .camera : .photoLibrary)
+                .ignoresSafeArea()
+        }
+        .onChange(of: stepImage) { _, image in
+            guard let image, let step = photoStep else { return }
+            stepImage = nil
+            pickerSource = nil
+            photoStep = nil
+            Task { await addStepPhoto(image, to: step) }
+        }
+        .alert("Couldn't save the photo", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+        .sheet(item: $viewingPhoto) { photo in
+            StepPhotoViewer(
+                url: photo.url,
+                caption: photo.caption,
+                onRemove: isOwner ? { Task { await removeStepPhoto(photo.url, from: photo.stepId) } } : nil
+            )
         }
         .onChange(of: selectedImage) { _, newImage in
             if let image = newImage {
@@ -146,6 +220,10 @@ struct RecipeDetailView: View {
                     selectedImage = nil
                 }
             }
+        }
+        .onChange(of: selectedVariation?.id) { _, _ in
+            // A different chef's list — the pencil marks were for the other one.
+            struck = []
         }
         .sheet(isPresented: $showImagePicker) {
             ImagePickerView(selectedImage: $selectedImage)
@@ -164,7 +242,9 @@ struct RecipeDetailView: View {
             let friendIds = friendService.friends.compactMap { $0.id }
             let allVariations = try await recipeService.fetchVariations(for: recipeId, friendIds: friendIds)
             // Filter out variations from the recipe owner (handles edge case after promotion)
-            variations = allVariations.filter { $0.authorId != recipe.authorId }
+            variations = allVariations.filter {
+                $0.authorId != recipe.authorId && !moderation.isBlocked($0.authorId)
+            }
         } catch {
             print("Error loading variations: \(error)")
         }
@@ -173,144 +253,110 @@ struct RecipeDetailView: View {
 
     // MARK: - Chef Selector
 
+    /// The original first, then each friend's version by its author.
+    private var chefOptions: [(value: String?, label: String)] {
+        var options: [(value: String?, label: String)] = [(value: nil, label: "Original")]
+        for variation in variations {
+            options.append((value: variation.id, label: "@" + (variation.authorUsername ?? "chef")))
+        }
+        return options
+    }
+
+    private var chefSelection: Binding<String?> {
+        Binding(
+            get: { selectedVariation?.id },
+            set: { id in
+                selectedVariation = id == nil ? nil : variations.first { $0.id == id }
+            }
+        )
+    }
+
+    /// Whose version is on the page — the original, or a friend's take on it.
     private var chefSelectorSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-            Text("Chef Variations")
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGray)
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            Text("Whose version".uppercased())
+                .smallCaps(10, weight: .semibold, tracking: 1.4)
+                .foregroundColor(Theme.ink2)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: FAFSpacing.sm) {
-                    // Original recipe pill
-                    Button {
-                        selectedVariation = nil
-                    } label: {
-                        HStack(spacing: FAFSpacing.xs) {
-                            if selectedVariation == nil {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 10, weight: .bold))
-                            }
-                            Text("Original")
-                                .font(FAFTypography.caption)
-                            if let author = recipe.authorUsername {
-                                Text("@\(author)")
-                                    .font(FAFTypography.caption)
-                                    .opacity(0.7)
-                            }
-                        }
-                        .foregroundColor(selectedVariation == nil ? .fafWhite : .fafGray)
-                        .padding(.horizontal, FAFSpacing.md)
-                        .padding(.vertical, FAFSpacing.sm)
-                        .background(selectedVariation == nil ? Color.fafCoral : Color.fafGrayXLight)
-                        .cornerRadius(FAFRadius.full)
-                    }
-
-                    // Variation pills
-                    ForEach(variations) { variation in
-                        Button {
-                            selectedVariation = variation
-                        } label: {
-                            HStack(spacing: FAFSpacing.xs) {
-                                if selectedVariation?.id == variation.id {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 10, weight: .bold))
-                                }
-                                if let author = variation.authorUsername {
-                                    Text("@\(author)")
-                                        .font(FAFTypography.caption)
-                                }
-                                if variation.likeCount > 0 {
-                                    HStack(spacing: 2) {
-                                        Image(systemName: "heart.fill")
-                                            .font(.system(size: 8))
-                                        Text("\(variation.likeCount)")
-                                            .font(FAFTypography.caption)
-                                    }
-                                    .opacity(0.7)
-                                }
-                            }
-                            .foregroundColor(selectedVariation?.id == variation.id ? .fafWhite : .fafGray)
-                            .padding(.horizontal, FAFSpacing.md)
-                            .padding(.vertical, FAFSpacing.sm)
-                            .background(selectedVariation?.id == variation.id ? Color.fafCoral : Color.fafGrayXLight)
-                            .cornerRadius(FAFRadius.full)
-                        }
-                    }
-                }
+                IndexSelector(options: chefOptions, selection: chefSelection)
+                    .padding(.vertical, 2)
             }
+            // The page's room for the thumb index is for vertical lists, not this row.
+            .contentMargins(.bottom, 0, for: .scrollContent)
         }
     }
 
+    /// A friend's note on their version, set as a marginal note: herb rule
+    /// down the side, italic, their marks underneath.
     private func variationNotesSection(for variation: RecipeVariation) -> some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-            HStack {
-                Image(systemName: "note.text")
-                    .font(.system(size: 14))
-                    .foregroundColor(.fafSage)
-                Text("Chef's Notes")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            Text("@\(variation.authorUsername ?? "chef")'s note".uppercased())
+                .smallCaps(10, weight: .semibold, tracking: 1.4)
+                .foregroundColor(Theme.herb)
 
-                Spacer()
+            Text(variation.notes)
+                .font(.setting(15).italic())
+                .foregroundColor(Theme.ink)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
 
-                // Like button
+            HStack(spacing: Theme.spacingLG) {
                 Button {
                     Task { await likeVariation(variation) }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "heart")
-                            .font(.system(size: 14))
-                        if variation.likeCount > 0 {
-                            Text("\(variation.likeCount)")
-                                .font(FAFTypography.caption)
-                        }
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(variation.likeCount > 0 ? "Like · \(variation.likeCount)" : "Like")
+                            .textCase(.uppercase)
+                            .font(.system(size: 10, weight: .semibold))
+                            .tracking(1.2)
                     }
-                    .foregroundColor(.fafCoral)
+                    .foregroundColor(Theme.accent)
+                }
+                .buttonStyle(.plain)
+
+                if variation.authorId != userService.currentUser?.id, let variationId = variation.id {
+                    Button {
+                        reportingVariation = ReportSubject(
+                            target: .variation, targetId: variationId, authorId: variation.authorId,
+                            authorUsername: variation.authorUsername,
+                            label: "@\(variation.authorUsername ?? "chef")'s \(recipe.title)"
+                        )
+                    } label: {
+                        Text("Report".uppercased())
+                            .smallCaps(10, weight: .semibold, tracking: 1.2)
+                            .foregroundColor(Theme.ink3)
+                    }
+                    .buttonStyle(.plain)
                 }
 
-                // Promote button (owner only)
                 if isOwner {
                     Button {
                         Task { await promoteVariation(variation) }
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.up.circle")
-                                .font(.system(size: 14))
-                            Text("Promote")
-                                .font(FAFTypography.caption)
-                        }
-                        .foregroundColor(.fafSage)
+                        Text("Make this the original".uppercased())
+                            .smallCaps(10, weight: .semibold, tracking: 1.2)
+                            .foregroundColor(Theme.herb)
                     }
+                    .buttonStyle(.plain)
                 }
             }
-
-            Text(variation.notes)
-                .font(FAFTypography.body)
-                .foregroundColor(.fafTextPrimary)
-                .italic()
+            .padding(.top, 2)
         }
-        .padding(FAFSpacing.md)
-        .background(Color.fafSage.opacity(0.1))
-        .cornerRadius(FAFRadius.md)
+        .padding(.leading, Theme.spacingMD)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Theme.herb).frame(width: 2)
+        }
     }
 
     private var addVariationButton: some View {
-        Button {
+        Button("Write your own version") {
             showVariationSheet = true
-        } label: {
-            HStack {
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 18))
-                Text("Add Your Variation")
-                    .font(FAFTypography.button)
-            }
-            .foregroundColor(.fafCoral)
-            .frame(maxWidth: .infinity)
-            .padding(FAFSpacing.md)
-            .background(Color.fafCoral.opacity(0.1))
-            .cornerRadius(FAFRadius.md)
         }
-        .padding(.top, FAFSpacing.md)
+        .buttonStyle(.pressOutline)
+        .padding(.top, Theme.spacingSM)
     }
 
     private func likeVariation(_ variation: RecipeVariation) async {
@@ -333,66 +379,89 @@ struct RecipeDetailView: View {
         }
     }
 
-    // MARK: - Hero Image
+    // MARK: - Photograph
 
-    private var recipeImage: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Rectangle()
-                .fill(Color.fafGrayXLight)
-                .frame(height: 250)
-
-            if let imageURL = displayedImageURL, let url = URL(string: imageURL) {
-                AsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    FAFIcon(.fork, size: 48, color: .fafGray)
+    /// The dish, pasted in. The cook can add or change it; everyone else
+    /// just sees it — or no frame at all when there isn't one.
+    @ViewBuilder
+    private var photo: some View {
+        if displayedImageURL != nil || showEditButton {
+            PhotoPlate(url: displayedImageURL, height: 240, placeholder: "No photograph yet")
+                .overlay {
+                    if isUploadingPhoto {
+                        ZStack {
+                            Theme.paper.opacity(0.7)
+                            ProgressView().tint(Theme.ink)
+                        }
+                    }
                 }
-                .frame(height: 250)
-                .clipped()
-            } else {
-                VStack(spacing: FAFSpacing.sm) {
-                    FAFIcon(.fork, size: 48, color: .fafGray)
-                    Text("No photo")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
+                .overlay(alignment: .bottomTrailing) {
+                    if showEditButton && !isUploadingPhoto {
+                        Button {
+                            showImagePicker = true
+                        } label: {
+                            Text((displayedImageURL == nil ? "Add photograph" : "Change").uppercased())
+                                .smallCaps(9, weight: .semibold, tracking: 1.2)
+                                .foregroundColor(Theme.ink)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(Theme.paper)
+                                .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(10)
+                    }
                 }
-                .frame(maxWidth: .infinity, maxHeight: 250)
-            }
-
-            // Upload overlay when uploading
-            if isUploadingPhoto {
-                Rectangle()
-                    .fill(Color.black.opacity(0.5))
-                    .frame(height: 250)
-                    .overlay(
-                        ProgressView()
-                            .tint(.white)
-                            .scaleEffect(1.5)
-                    )
-            }
-
-            // Photo button for owner or variation owner
-            if showEditButton && !isUploadingPhoto {
-                Button {
-                    showImagePicker = true
-                } label: {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(.white)
-                        .padding(FAFSpacing.sm)
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(Circle())
-                }
-                .padding(FAFSpacing.md)
-            }
         }
-        .frame(height: 250)
-        .clipped()
     }
 
     // MARK: - Upload Photo
+
+    // MARK: - Step photos
+
+    /// The steps as they are now — after any edit made since this page opened.
+    private var latestSteps: [RecipeStep] {
+        recipeService.userRecipes.first { $0.id == recipe.id }?.steps ?? recipe.steps
+    }
+
+    private func addStepPhoto(_ image: UIImage, to step: RecipeStep) async {
+        guard let recipeId = recipe.id else { return }
+        uploadingStepId = step.id
+        defer { uploadingStepId = nil }
+        do {
+            // recipe_images/{recipeId}_… — account deletion sweeps that prefix.
+            let filename = "\(recipeId)_step_\(step.id)_\(Int(Date().timeIntervalSince1970)).jpg"
+            let url = try await StorageService.shared.uploadImage(
+                image.resized(toMaxDimension: 1600), path: "recipe_images", filename: filename
+            )
+            stepPhotos[step.id, default: []].append(url)
+            try await saveStepPhotos()
+        } catch {
+            errorMessage = "The photo didn't save — \(error.localizedDescription)"
+            showError = true
+        }
+    }
+
+    private func removeStepPhoto(_ url: String, from stepId: String) async {
+        stepPhotos[stepId]?.removeAll { $0 == url }
+        do {
+            try await saveStepPhotos()
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+        }
+    }
+
+    private func saveStepPhotos() async throws {
+        guard let recipeId = recipe.id else { return }
+        let steps = latestSteps.map { step -> RecipeStep in
+            var step = step
+            let photos = stepPhotos[step.id] ?? []
+            step.photoURLs = photos.isEmpty ? nil : photos
+            return step
+        }
+        try await recipeService.updateSteps(steps, recipeId: recipeId)
+    }
 
     private func uploadRecipePhoto(_ image: UIImage) async {
         guard let recipeId = recipe.id else { return }
@@ -451,159 +520,176 @@ struct RecipeDetailView: View {
     // MARK: - Header Section
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-            HStack(alignment: .top) {
-                Text(recipe.title)
-                    .font(FAFTypography.h1)
-                    .foregroundColor(.fafTextPrimary)
+        VStack(alignment: .leading, spacing: 0) {
+            DoubleRule()
+                .padding(.bottom, 10)
 
-                Spacer()
+            Text(recipe.title)
+                .font(.plate(30))
+                .foregroundColor(Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
 
-                // Edit button for owner or variation owner
-                if showEditButton {
-                    Button {
-                        handleEditTap()
-                    } label: {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.fafCoral)
-                    }
-                }
+            if let authorUsername = recipe.authorUsername {
+                Text("From the kitchen of @\(authorUsername)".uppercased())
+                    .smallCaps(10, weight: .medium, tracking: 1.4)
+                    .foregroundColor(Theme.ink2)
+                    .padding(.top, 6)
             }
 
             if !recipe.description.isEmpty {
                 Text(recipe.description)
-                    .font(FAFTypography.body)
-                    .foregroundColor(.fafGray)
-            }
-
-            // Author info
-            if let authorUsername = recipe.authorUsername {
-                HStack(spacing: FAFSpacing.xs) {
-                    Circle()
-                        .fill(Color.fafGrayXLight)
-                        .frame(width: 24, height: 24)
-                        .overlay(
-                            FAFIcon(.profile, size: 12, color: .fafGray)
-                        )
-                    Text("@\(authorUsername)")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-                }
-                .padding(.top, FAFSpacing.xs)
+                    .font(.setting(15).italic())
+                    .foregroundColor(Theme.ink2)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 10)
             }
         }
     }
 
     // MARK: - Stats Section
 
+    @ViewBuilder
     private var statsSection: some View {
-        HStack(spacing: FAFSpacing.lg) {
-            if let prepTime = recipe.prepTimeMinutes {
-                StatItem(icon: "clock", label: "Prep", value: "\(prepTime) min")
-            }
-
-            if let cookTime = recipe.cookTimeMinutes {
-                StatItem(icon: "flame", label: "Cook", value: "\(cookTime) min")
-            }
-
-            if let servings = recipe.servings {
-                StatItem(icon: "person.2", label: "Serves", value: "\(servings)")
-            }
+        let items: [(label: String, value: String)] = [
+            recipe.prepTimeMinutes.map { (label: "Prep", value: $0.printedMinutes) },
+            recipe.cookTimeMinutes.map { (label: "Cook", value: $0.printedMinutes) },
+            recipe.servings.map { (label: "Serves", value: "\($0)") },
+        ].compactMap { $0 }
+        if !items.isEmpty {
+            Figures(items: items)
         }
-        .padding(FAFSpacing.md)
-        .frame(maxWidth: .infinity)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
     }
 
     // MARK: - Ingredients Section
 
     private var ingredientsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text("Ingredients")
-                .font(FAFTypography.h2)
-                .foregroundColor(.fafTextPrimary)
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHead(
+                title: "Ingredients",
+                figure: struck.isEmpty
+                    ? "\(currentIngredients.count)"
+                    : "\(struck.count) of \(currentIngredients.count) crossed off"
+            )
+            .padding(.bottom, 4)
 
-            VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                ForEach(currentIngredients) { ingredient in
-                    HStack(alignment: .top, spacing: FAFSpacing.sm) {
-                        Circle()
-                            .fill(Color.fafCoral)
-                            .frame(width: 6, height: 6)
-                            .padding(.top, 7)
+            ForEach(currentIngredients) { ingredient in
+                IngredientLine(ingredient, struck: struck.contains(ingredient.id))
+                    .onTapGesture {
+                        withAnimation(.easeOut(duration: 0.12)) {
+                            if struck.contains(ingredient.id) {
+                                struck.remove(ingredient.id)
+                            } else {
+                                struck.insert(ingredient.id)
+                            }
+                        }
+                    }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint("Crosses the ingredient off")
+            }
 
-                        Text(ingredient.displayString)
-                            .font(FAFTypography.body)
-                            .foregroundColor(.fafTextPrimary)
+            addToListButton
+                .padding(.top, Theme.spacingMD)
+
+            HStack {
+                Text(struck.isEmpty ? "Cross off what you already have" : "")
+                    .font(.setting(11).italic())
+                    .foregroundColor(Theme.ink3)
+                Spacer()
+                if !struck.isEmpty {
+                    MarginButton("Clear marks") {
+                        withAnimation { struck.removeAll() }
+                    }
+                }
+            }
+            .padding(.top, 8)
+        }
+    }
+
+    /// Puts what's still needed on the shopping list — every ingredient, or
+    /// only the ones not crossed off as already in the cupboard.
+    @ViewBuilder
+    private var addToListButton: some View {
+        let needed = currentIngredients.filter { !struck.contains($0.id) }
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                guard let user = userService.currentUser else { return }
+                Task {
+                    let count = await shoppingService.add(needed, from: recipe, author: user)
+                    addedNote = shoppingService.lastError ?? "Added \(count) to the list"
+                }
+            } label: {
+                Text(struck.isEmpty ? "Add to the list" : "Add the other \(needed.count) to the list")
+            }
+            .buttonStyle(.pressOutline)
+            .disabled(needed.isEmpty || userService.currentUser == nil)
+
+            if let addedNote {
+                Text(addedNote.uppercased())
+                    .smallCaps(9, weight: .semibold, tracking: 1.3)
+                    .foregroundColor(shoppingService.lastError == nil ? Theme.herb : Theme.error)
+            } else if shoppingService.contains(recipe) {
+                HStack {
+                    Text("On your shopping list".uppercased())
+                        .smallCaps(9, weight: .semibold, tracking: 1.3)
+                        .foregroundColor(Theme.herb)
+                    Spacer()
+                    MarginButton("Take off the list") {
+                        Task {
+                            await shoppingService.removeRecipe(titled: recipe.title)
+                            addedNote = shoppingService.lastError ?? "Taken off the list"
+                        }
                     }
                 }
             }
         }
+        .onChange(of: struck) { _, _ in addedNote = nil }
     }
 
     // MARK: - Instructions Section
 
     private var instructionsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text("Instructions")
-                .font(FAFTypography.h2)
-                .foregroundColor(.fafTextPrimary)
+        VStack(alignment: .leading, spacing: 0) {
+            let steps = currentSteps
+            let legacy = recipe.instructions ?? []
 
-            VStack(alignment: .leading, spacing: FAFSpacing.xl) {
-                if !currentSteps.isEmpty {
-                    // New format with per-step ingredients
-                    ForEach(Array(currentSteps.enumerated()), id: \.element.id) { index, step in
-                        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                            HStack(alignment: .top, spacing: FAFSpacing.md) {
-                                Text("\(index + 1)")
-                                    .font(FAFTypography.h3)
-                                    .foregroundColor(.fafWhite)
-                                    .frame(width: 28, height: 28)
-                                    .background(Color.fafCoral)
-                                    .clipShape(Circle())
+            SectionHead(
+                title: "Method",
+                figure: {
+                    let count = steps.isEmpty ? legacy.count : steps.count
+                    return "\(count) \(count == 1 ? "step" : "steps")"
+                }()
+            )
+            .padding(.bottom, 4)
 
-                                Text(step.instruction)
-                                    .font(FAFTypography.body)
-                                    .foregroundColor(.fafTextPrimary)
-                                    .fixedSize(horizontal: false, vertical: true)
+            if !steps.isEmpty {
+                ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                    MethodStep(number: index + 1, text: step.instruction, ingredients: ingredientsForStep(step))
+                    // Photos belong to the original's steps; a friend's version shows its own text only.
+                    if selectedVariation == nil {
+                        StepPhotoStrip(
+                            photos: stepPhotos[step.id] ?? [],
+                            canAdd: isOwner,
+                            isUploading: uploadingStepId == step.id,
+                            onAdd: { photoStep = step },
+                            onOpen: { url in
+                                viewingPhoto = ViewedStepPhoto(url: url, stepId: step.id,
+                                                               caption: "Step \(index + 1) — \(step.instruction)")
                             }
-
-                            // Per-step ingredients
-                            let stepIngredients = ingredientsForStep(step)
-                            if !stepIngredients.isEmpty {
-                                VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-                                    ForEach(stepIngredients) { ingredient in
-                                        HStack(spacing: FAFSpacing.sm) {
-                                            Circle()
-                                                .fill(Color.fafSage)
-                                                .frame(width: 4, height: 4)
-                                            Text(ingredient.displayString)
-                                                .font(FAFTypography.caption)
-                                                .foregroundColor(.fafGray)
-                                        }
-                                    }
-                                }
-                                .padding(.leading, 40)
-                            }
-                        }
+                        )
+                        .padding(.leading, 24 + Theme.spacingMD)
+                        .padding(.bottom, Theme.spacingSM)
                     }
-                } else if let instructions = recipe.instructions {
-                    // Old format fallback
-                    ForEach(Array(instructions.enumerated()), id: \.offset) { index, instruction in
-                        HStack(alignment: .top, spacing: FAFSpacing.md) {
-                            Text("\(index + 1)")
-                                .font(FAFTypography.h3)
-                                .foregroundColor(.fafWhite)
-                                .frame(width: 28, height: 28)
-                                .background(Color.fafCoral)
-                                .clipShape(Circle())
-
-                            Text(instruction)
-                                .font(FAFTypography.body)
-                                .foregroundColor(.fafTextPrimary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                    if index < steps.count - 1 {
+                        DashedDivider()
+                    }
+                }
+            } else {
+                // Recipes written before steps carried their own ingredients
+                ForEach(Array(legacy.enumerated()), id: \.offset) { index, instruction in
+                    MethodStep(number: index + 1, text: instruction)
+                    if index < legacy.count - 1 {
+                        DashedDivider()
                     }
                 }
             }
@@ -613,74 +699,18 @@ struct RecipeDetailView: View {
     // MARK: - Tags Section
 
     private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-            Text("Tags")
-                .font(FAFTypography.h3)
-                .foregroundColor(.fafTextPrimary)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: FAFSpacing.xs) {
-                    ForEach(recipe.tags, id: \.self) { tag in
-                        Text(tag)
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafGray)
-                            .padding(.horizontal, FAFSpacing.sm)
-                            .padding(.vertical, FAFSpacing.xxs)
-                            .background(Color.fafGrayXLight)
-                            .cornerRadius(FAFRadius.sm)
-                    }
-                }
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            Rule()
+            Text(recipe.tags.map { $0.uppercased() }.joined(separator: "  ·  "))
+                .smallCaps(10, weight: .medium, tracking: 1.3)
+                .foregroundColor(Theme.ink3)
+                .fixedSize(horizontal: false, vertical: true)
         }
-    }
-}
-
-// MARK: - Stat Item
-
-struct StatItem: View {
-    let icon: String
-    let label: String
-    let value: String
-
-    var body: some View {
-        VStack(spacing: FAFSpacing.xxs) {
-            Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundColor(.fafCoral)
-
-            Text(value)
-                .font(FAFTypography.bodyBold)
-                .foregroundColor(.fafTextPrimary)
-
-            Text(label)
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGray)
-        }
-        .frame(maxWidth: .infinity)
     }
 }
 
 #Preview {
-    let beef = Ingredient(name: "beef chuck", quantity: "2", unit: "lbs")
-    let potatoes = Ingredient(name: "potatoes", quantity: "4", unit: "medium")
-    let carrots = Ingredient(name: "carrots", quantity: "3", unit: "large")
-
-    return NavigationStack {
-        RecipeDetailView(recipe: Recipe(
-            authorId: "123",
-            title: "Classic Beef Stew",
-            description: "A hearty, warming beef stew with tender chunks of beef and vegetables.",
-            ingredients: [beef, potatoes, carrots],
-            steps: [
-                RecipeStep(instruction: "Cut beef into cubes and season with salt.", ingredientIds: [beef.id], orderIndex: 0),
-                RecipeStep(instruction: "Brown the beef in a Dutch oven.", ingredientIds: [beef.id], orderIndex: 1),
-                RecipeStep(instruction: "Add vegetables and broth, simmer for 2 hours.", ingredientIds: [potatoes.id, carrots.id], orderIndex: 2)
-            ],
-            servings: 6,
-            prepTimeMinutes: 20,
-            cookTimeMinutes: 90,
-            tags: ["dinner", "comfort food", "beef"],
-            authorUsername: "johndoe"
-        ))
+    NavigationStack {
+        RecipeDetailView(recipe: Recipe.classicBeefStew(authorId: "123", authorUsername: "david"))
     }
 }

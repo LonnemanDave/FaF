@@ -7,6 +7,7 @@ struct ProfileSetupView: View {
     @StateObject private var locationManager = LocationManager()
 
     @State private var username = ""
+    @State private var termsAccepted = false
     @State private var location = ""
     @State private var isCheckingUsername = false
     @State private var usernameAvailable: Bool?
@@ -17,36 +18,33 @@ struct ProfileSetupView: View {
     private let usernameDebouncer = Debouncer(delay: 0.5)
 
     var body: some View {
-        VStack(spacing: FAFSpacing.xl) {
-            // Header
-            VStack(spacing: FAFSpacing.sm) {
-                FAFIcon(.profile, size: 48, color: .fafCoral)
-                Text("Complete Your Profile")
-                    .font(FAFTypography.h1)
-                    .foregroundColor(.fafTextPrimary)
-                Text("Choose a unique username and set your location")
-                    .font(FAFTypography.body)
-                    .foregroundColor(.fafGray)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.top, FAFSpacing.xl)
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.spacingXL) {
+                PlateHeader(title: "Your page", subtitle: "The first entry in your journal")
+                    .padding(.top, 40)
 
-            Spacer()
+                Text("Choose the name friends will find you by, and where you cook.")
+                    .font(.setting(15))
+                    .foregroundColor(Theme.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            // Form
-            VStack(spacing: FAFSpacing.lg) {
-                // Username Field
-                VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                    Text("Username")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-
-                    HStack {
+                // Username
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Username".uppercased())
+                            .smallCaps(10, weight: .semibold, tracking: 1.4)
+                            .foregroundColor(Theme.ink2)
+                        Spacer()
+                        usernameMark
+                    }
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
                         Text("@")
-                            .font(FAFTypography.body)
-                            .foregroundColor(.fafGray)
-                        TextField("username", text: $username)
-                            .font(FAFTypography.body)
+                            .font(.setting(17))
+                            .foregroundColor(Theme.ink3)
+                        TextField(text: $username, prompt: Text("username").foregroundColor(Theme.ink3)) { Text("Username") }
+                            .font(.setting(17))
+                            .foregroundColor(Theme.ink)
+                            .tint(Theme.accent)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .onChange(of: username) { _, newValue in
@@ -57,101 +55,57 @@ struct ProfileSetupView: View {
                                 }
                                 checkUsernameAvailability()
                             }
-
-                        if isCheckingUsername {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                        } else if let available = usernameAvailable {
-                            FAFIcon(
-                                available ? .check : .close,
-                                size: 18,
-                                color: available ? .fafSage : .fafCoral
-                            )
-                        }
                     }
-                    .padding(FAFSpacing.md)
-                    .background(Color.fafOffWhite)
-                    .cornerRadius(FAFRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FAFRadius.md)
-                            .stroke(usernameFieldBorderColor, lineWidth: 1)
-                    )
+                    Rule(color: usernameFieldBorderColor)
 
                     if let available = usernameAvailable, !available {
-                        Text("This username is already taken")
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafCoral)
+                        Text("Someone already goes by that.")
+                            .font(.setting(12).italic())
+                            .foregroundColor(Theme.error)
                     } else if !username.isEmpty && !userService.isValidUsername(username) {
-                        Text("3-20 characters, letters, numbers, underscores only")
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafCoral)
+                        Text("3–20 letters, numbers or underscores.")
+                            .font(.setting(12).italic())
+                            .foregroundColor(Theme.ink3)
                     }
                 }
 
-                // Location Field
-                VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                    Text("Location")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-
-                    HStack {
-                        FAFIcon(.location, size: 18, color: .fafGray)
-                        TextField("City, State", text: $location)
-                            .font(FAFTypography.body)
-
+                // Location
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .bottom, spacing: Theme.spacingSM) {
+                        FieldLine(label: "Where you cook", text: $location, prompt: "City, State")
                         if locationManager.isLoading {
-                            ProgressView()
-                                .scaleEffect(0.8)
+                            ProgressView().tint(Theme.ink3).padding(.bottom, 10)
                         } else {
-                            Button {
-                                requestLocation()
-                            } label: {
-                                Text("Detect")
-                                    .font(FAFTypography.caption)
-                                    .foregroundColor(.fafCoral)
-                            }
+                            MarginButton("Find me") { requestLocation() }
+                                .padding(.bottom, 10)
                         }
                     }
-                    .padding(FAFSpacing.md)
-                    .background(Color.fafOffWhite)
-                    .cornerRadius(FAFRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FAFRadius.md)
-                            .stroke(Color.fafGrayXLight, lineWidth: 1)
-                    )
-
                     if let error = locationManager.errorMessage {
                         Text(error)
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafCoral)
+                            .font(.setting(12).italic())
+                            .foregroundColor(Theme.ink3)
                     }
                 }
-            }
 
-            Spacer()
+                termsLine
 
-            // Submit Button
-            FAFButton(
-                title: "Continue",
-                style: .primary,
-                isLoading: isLoading
-            ) {
-                Task {
-                    await createProfile()
+                Button {
+                    Task { await createProfile() }
+                } label: {
+                    if isLoading {
+                        ProgressView().tint(Theme.paper)
+                    } else {
+                        Text("Open the journal")
+                    }
                 }
+                .buttonStyle(.press)
+                .disabled(!isFormValid || !termsAccepted || isLoading)
             }
-            .disabled(!isFormValid)
-
-            // Skip for now (optional)
-            Button("I'll do this later") {
-                // Could implement skip logic if needed
-            }
-            .font(FAFTypography.caption)
-            .foregroundColor(.fafGray)
-            .padding(.bottom, FAFSpacing.lg)
+            .padding(.bottom, Theme.spacingXL)
+            .page()
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafBackground)
+        .background(Theme.paper)
+        .scrollDismissesKeyboard(.interactively)
         .onTapGesture {
             dismissKeyboard()
         }
@@ -167,6 +121,57 @@ struct ProfileSetupView: View {
         }
     }
 
+    /* Guideline 1.2: before anyone can write or read what others share,
+     * they agree to the terms — including that abuse isn't tolerated. Every
+     * new account comes through this page, whichever way it signed in. */
+    private var termsLine: some View {
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            Button {
+                termsAccepted.toggle()
+            } label: {
+                HStack(alignment: .top, spacing: Theme.spacingSM) {
+                    TickBox(ticked: termsAccepted)
+                        .padding(.top, 2)
+                    Text("I agree to the Terms of use and the Privacy policy. There's no place here for abusive or objectionable content, or for people who post it.")
+                        .font(.setting(14))
+                        .foregroundColor(Theme.ink)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(termsAccepted ? .isSelected : [])
+
+            HStack(spacing: Theme.spacingLG) {
+                Link(destination: LegalLinks.terms) {
+                    Text("Read the terms".uppercased())
+                        .smallCaps(10, weight: .semibold, tracking: 1.3)
+                        .foregroundColor(Theme.accent)
+                }
+                Link(destination: LegalLinks.privacy) {
+                    Text("Privacy policy".uppercased())
+                        .smallCaps(10, weight: .semibold, tracking: 1.3)
+                        .foregroundColor(Theme.accent)
+                }
+            }
+            .padding(.leading, 17 + Theme.spacingSM)
+        }
+    }
+
+    /// Checking, free, or taken — set small at the end of the label line.
+    @ViewBuilder
+    private var usernameMark: some View {
+        if isCheckingUsername {
+            ProgressView().tint(Theme.ink3).scaleEffect(0.7)
+        } else if let available = usernameAvailable {
+            Text((available ? "Free" : "Taken").uppercased())
+                .smallCaps(9, weight: .bold, tracking: 1.2)
+                .foregroundColor(available ? Theme.herb : Theme.error)
+        }
+    }
+
     private var isFormValid: Bool {
         userService.isValidUsername(username) &&
         usernameAvailable == true &&
@@ -175,12 +180,12 @@ struct ProfileSetupView: View {
 
     private var usernameFieldBorderColor: Color {
         if username.isEmpty {
-            return .fafGrayXLight
+            return Theme.rule
         }
         if let available = usernameAvailable {
-            return available ? .fafSage : .fafCoral
+            return available ? Theme.herb : Theme.error
         }
-        return .fafGrayXLight
+        return Theme.rule
     }
 
     private func checkUsernameAvailability() {
@@ -299,9 +304,17 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        if manager.authorizationStatus == .authorizedWhenInUse ||
-           manager.authorizationStatus == .authorizedAlways {
-            manager.requestLocation()
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            if isLoading { manager.requestLocation() }
+        case .denied, .restricted:
+            // Refused at the prompt: stop the spinner rather than leave it turning.
+            if isLoading {
+                isLoading = false
+                errorMessage = "Location is off for Food & Friends — type your city instead."
+            }
+        default:
+            break
         }
     }
 }

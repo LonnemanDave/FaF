@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// Asking Claude for a menu: the dates, the house rules, a note about the
+/// week — then the draft, set out day by day the way a saved menu is, to be
+/// read over before it goes in the journal.
 struct AIMealPlanGeneratorView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var aiService = AIService.shared
@@ -29,8 +32,8 @@ struct AIMealPlanGeneratorView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: FAFSpacing.lg) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.spacingXL) {
                     if generatedPlan == nil {
                         // Setup Phase
                         headerSection
@@ -43,38 +46,32 @@ struct AIMealPlanGeneratorView: View {
                         planReviewSection
                     }
                 }
-                .padding(FAFSpacing.lg)
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.fafBackground.ignoresSafeArea())
+            .background(Theme.paper)
+            .scrollDismissesKeyboard(.interactively)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        if generatedPlan != nil {
-                            // Go back to setup
+            .plainToolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if generatedPlan != nil {
+                        // Go back to setup
+                        MarginButton("Back") {
                             generatedPlan = nil
                             linkedRecipes = [:]
                             missingRecipes = []
-                        } else {
-                            dismiss()
                         }
-                    } label: {
-                        if generatedPlan != nil {
-                            HStack(spacing: FAFSpacing.xxs) {
-                                Image(systemName: "chevron.left")
-                                Text("Back")
-                            }
-                            .foregroundColor(.fafGray)
-                        } else {
-                            FAFIcon(.close, size: 20, color: .fafGrayDark)
-                        }
+                    } else {
+                        MarginButton("Cancel") { dismiss() }
                     }
                 }
-                ToolbarItem(placement: .principal) {
-                    Text(generatedPlan == nil ? "AI Meal Planner" : "Review Plan")
-                        .font(FAFTypography.h3)
-                        .foregroundColor(.fafTextPrimary)
+                if generatedPlan != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        MarginButton("Save") { Task { await savePlan() } }
+                            .disabled(isSaving)
+                            .opacity(isSaving ? 0.35 : 1)
+                    }
                 }
             }
             .alert("Error", isPresented: $showError) {
@@ -91,255 +88,178 @@ struct AIMealPlanGeneratorView: View {
     // MARK: - Header Section
 
     private var headerSection: some View {
-        VStack(spacing: FAFSpacing.md) {
-            ZStack {
-                Circle()
-                    .fill(Color.fafSage.opacity(0.15))
-                    .frame(width: 72, height: 72)
+        VStack(alignment: .leading, spacing: Theme.spacingMD) {
+            PlateHeader(title: "Ask for a menu", subtitle: "Drafted by Claude, kept by you")
 
-                Image(systemName: "calendar.badge.plus")
-                    .font(.system(size: 32))
-                    .foregroundColor(.fafSage)
-            }
-
-            VStack(spacing: FAFSpacing.xs) {
-                Text("Plan Your Meals")
-                    .font(FAFTypography.h2)
-                    .foregroundColor(.fafTextPrimary)
-
-                Text("Claude will create a personalized meal plan based on your preferences.")
-                    .font(FAFTypography.body)
-                    .foregroundColor(.fafGray)
-                    .multilineTextAlignment(.center)
-            }
+            Text("Say which days and how the week looks. Claude drafts a menu to your preferences, and you read it over before it goes in the journal.")
+                .font(.setting(15).italic())
+                .foregroundColor(Theme.ink2)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     // MARK: - Date Range Section
 
     private var dateRangeSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text("Date Range")
-                .font(FAFTypography.label)
-                .foregroundColor(.fafGrayDark)
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHead(title: "Which days", figure: "\(numberOfDays) \(numberOfDays == 1 ? "day" : "days")")
+                .padding(.bottom, Theme.spacingXS)
 
-            HStack(spacing: FAFSpacing.md) {
-                VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                    Text("Start")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-
-                    DatePicker("", selection: $startDate, displayedComponents: .date)
-                        .labelsHidden()
-                        .onChange(of: startDate) { _, newValue in
-                            if endDate < newValue {
-                                endDate = newValue
-                            }
-                        }
+            MenuDateLine(label: "From", date: $startDate)
+                .onChange(of: startDate) { _, newValue in
+                    if endDate < newValue {
+                        endDate = newValue
+                    }
                 }
-
-                VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                    Text("End")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-
-                    DatePicker("", selection: $endDate, in: startDate..., displayedComponents: .date)
-                        .labelsHidden()
-                }
-
-                Spacer()
-            }
-
-            Text("\(numberOfDays) day\(numberOfDays == 1 ? "" : "s")")
-                .font(FAFTypography.bodyBold)
-                .foregroundColor(.fafSage)
+            DashedDivider()
+            MenuDateLine(label: "To", date: $endDate, earliest: startDate)
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
     // MARK: - Preferences Section
 
     private var preferencesSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            HStack {
-                Text("Preferences")
-                    .font(FAFTypography.label)
-                    .foregroundColor(.fafGrayDark)
-
-                Spacer()
-
-                Button {
-                    showPreferences = true
-                } label: {
-                    Text("Edit")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafSage)
-                }
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            HStack(spacing: Theme.spacingMD) {
+                SectionHead(title: "Preferences")
+                MarginButton("Change") { showPreferences = true }
             }
 
-            VStack(alignment: .leading, spacing: FAFSpacing.sm) {
+            VStack(alignment: .leading, spacing: 0) {
                 if !preferences.dietaryRestrictions.isEmpty {
-                    PreferenceSummaryRow(
-                        icon: "leaf",
-                        label: "Dietary",
+                    PreferenceLine(
+                        label: "Diet",
                         value: preferences.dietaryRestrictions.map { $0.displayName }.joined(separator: ", ")
                     )
                 }
 
                 if !preferences.cuisinePreferences.isEmpty {
-                    PreferenceSummaryRow(
-                        icon: "globe",
+                    PreferenceLine(
                         label: "Cuisines",
                         value: preferences.cuisinePreferences.joined(separator: ", ")
                     )
                 }
 
                 if !preferences.allergens.isEmpty {
-                    PreferenceSummaryRow(
-                        icon: "exclamationmark.triangle",
-                        label: "Avoid",
-                        value: preferences.allergens.joined(separator: ", ")
+                    PreferenceLine(
+                        label: "Keep out",
+                        value: preferences.allergens.joined(separator: ", "),
+                        valueColor: Theme.error
                     )
                 }
 
-                PreferenceSummaryRow(
-                    icon: "person",
-                    label: "Skill",
+                if let calorieGoal = preferences.calorieGoal {
+                    PreferenceLine(label: "Portions", value: calorieGoal.displayName)
+                }
+
+                PreferenceLine(
+                    label: "Cooking",
                     value: preferences.cookingSkillLevel.displayName
                 )
 
-                PreferenceSummaryRow(
-                    icon: "fork.knife",
+                PreferenceLine(
                     label: "Meals",
-                    value: preferences.mealTypes.map { $0.displayName }.joined(separator: ", ")
+                    value: preferences.mealTypes.isEmpty
+                        ? "None chosen"
+                        : preferences.mealTypes.map { $0.displayName }.joined(separator: ", "),
+                    valueColor: preferences.mealTypes.isEmpty ? Theme.error : Theme.ink
                 )
 
                 if preferences.quickMealsPreferred {
-                    PreferenceSummaryRow(
-                        icon: "clock",
+                    PreferenceLine(
                         label: "Quick",
-                        value: "Under 30 min preferred"
+                        value: "Under 30 minutes, mostly"
                     )
                 }
             }
 
             if preferences == .default {
-                Text("Using default preferences. Tap Edit to customize.")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
+                Text("The usual settings. Change them to suit the week.")
+                    .font(.setting(12).italic())
+                    .foregroundColor(Theme.ink3)
             }
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
     // MARK: - Special Requests Section
 
     private var specialRequestsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text("Special Requests (optional)")
-                .font(FAFTypography.label)
-                .foregroundColor(.fafGrayDark)
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "About the week", figure: "Optional")
 
-            TextField("e.g., Easy meals Monday, fancy dinner Saturday, use up the chicken in my fridge...", text: $specialRequests, axis: .vertical)
-                .font(FAFTypography.body)
-                .lineLimit(3...6)
-                .padding(FAFSpacing.md)
-                .background(Color.fafInputBackground)
-                .cornerRadius(FAFRadius.md)
-                .overlay(
-                    RoundedRectangle(cornerRadius: FAFRadius.md)
-                        .stroke(Color.fafDivider, lineWidth: 1)
-                )
+            FieldLine(
+                label: "A note for Claude",
+                text: $specialRequests,
+                prompt: "Easy on Monday, something special Saturday, use up the chicken…",
+                multiline: true
+            )
 
-            Text("Tell Claude about your week - busy days, special occasions, ingredients to use up, or any other context.")
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGray)
+            Text("Busy days, guests, an occasion, what's in the fridge — whatever should shape the menu.")
+                .font(.setting(12).italic())
+                .foregroundColor(Theme.ink3)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
     // MARK: - Generate Button
 
     private var generateButton: some View {
-        Button {
-            Task { await generatePlan() }
-        } label: {
-            HStack(spacing: FAFSpacing.sm) {
-                if aiService.isLoading {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 18))
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            Button {
+                Task { await generatePlan() }
+            } label: {
+                HStack(spacing: Theme.spacingSM) {
+                    if aiService.isLoading {
+                        ProgressView()
+                            .tint(Theme.paper)
+                    }
+                    Text(aiService.isLoading ? "Writing the menu…" : "Ask for a menu")
                 }
-                Text(aiService.isLoading ? "Generating..." : "Generate Meal Plan")
-                    .font(FAFTypography.button)
             }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, FAFSpacing.md)
-            .background(Color.fafSage)
-            .cornerRadius(FAFRadius.md)
+            .buttonStyle(.press)
+            .disabled(aiService.isLoading || preferences.mealTypes.isEmpty)
+
+            if preferences.mealTypes.isEmpty {
+                Text("Choose at least one meal in the preferences to ask for a menu.")
+                    .font(.setting(12).italic())
+                    .foregroundColor(Theme.ink3)
+            } else if aiService.isLoading {
+                Text("This can take a minute for a long week.")
+                    .font(.setting(12).italic())
+                    .foregroundColor(Theme.ink3)
+            }
         }
-        .disabled(aiService.isLoading || preferences.mealTypes.isEmpty)
     }
 
     // MARK: - Plan Review Section
 
+    @ViewBuilder
     private var planReviewSection: some View {
-        VStack(spacing: FAFSpacing.lg) {
-            if let plan = generatedPlan {
-                // Plan Header
-                VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                    Text(plan.name)
-                        .font(FAFTypography.h2)
-                        .foregroundColor(.fafTextPrimary)
+        if let plan = generatedPlan {
+            VStack(alignment: .leading, spacing: Theme.spacingLG) {
+                PlateHeader(
+                    title: plan.name,
+                    subtitle: "\(startDate.printed) – \(endDate.printed) · \(numberOfDays) \(numberOfDays == 1 ? "day" : "days")",
+                    figure: "\(plan.meals.count) meals"
+                )
 
-                    if let description = plan.description {
-                        Text(description)
-                            .font(FAFTypography.body)
-                            .foregroundColor(.fafGray)
-                    }
-
-                    HStack(spacing: FAFSpacing.md) {
-                        Label("\(numberOfDays) days", systemImage: "calendar")
-                        Label("\(plan.meals.count) meals", systemImage: "fork.knife")
-                    }
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
+                if let description = plan.description, !description.isEmpty {
+                    Text(description)
+                        .font(.setting(15).italic())
+                        .foregroundColor(Theme.ink2)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(FAFSpacing.lg)
-                .background(Color.fafCardBackground)
-                .cornerRadius(FAFRadius.lg)
 
-                // Missing recipes warning
-                if !missingRecipes.isEmpty {
-                    HStack(spacing: FAFSpacing.sm) {
-                        Image(systemName: "exclamationmark.circle")
-                            .foregroundColor(.fafOrange)
-
-                        Text("\(missingRecipes.count) recipe\(missingRecipes.count == 1 ? "" : "s") need to be created")
-                            .font(FAFTypography.body)
-                            .foregroundColor(.fafTextPrimary)
-
-                        Spacer()
-                    }
-                    .padding(FAFSpacing.md)
-                    .background(Color.fafOrange.opacity(0.1))
-                    .cornerRadius(FAFRadius.md)
-                }
+                Text("A draft — nothing is saved until you put it in the journal.".uppercased())
+                    .smallCaps(9, weight: .semibold, tracking: 1.3)
+                    .foregroundColor(Theme.ink3)
 
                 // Meals by Day
                 ForEach(groupedMeals.keys.sorted(), id: \.self) { dateString in
                     if let meals = groupedMeals[dateString] {
-                        DayMealsCard(
+                        DraftMenuDay(
                             dateString: dateString,
                             meals: meals,
                             linkedRecipes: linkedRecipes,
@@ -348,25 +268,38 @@ struct AIMealPlanGeneratorView: View {
                     }
                 }
 
-                // Save Button
-                Button {
-                    Task { await savePlan() }
-                } label: {
-                    HStack(spacing: FAFSpacing.sm) {
-                        if isSaving {
-                            ProgressView()
-                                .tint(.white)
-                        }
-                        Text(isSaving ? "Saving..." : "Save Meal Plan")
-                            .font(FAFTypography.button)
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, FAFSpacing.md)
-                    .background(Color.fafSage)
-                    .cornerRadius(FAFRadius.md)
+                // Missing recipes note
+                if !missingRecipes.isEmpty {
+                    Text("\(missingRecipes.count) \(missingRecipes.count == 1 ? "dish isn't" : "dishes aren't") in your recipes yet. \(missingRecipes.count == 1 ? "It goes" : "They go") in by name, to write up later.")
+                        .font(.setting(12).italic())
+                        .foregroundColor(Theme.ink3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .disabled(isSaving)
+
+                // Save Button
+                VStack(spacing: Theme.spacingMD) {
+                    Button {
+                        Task { await savePlan() }
+                    } label: {
+                        HStack(spacing: Theme.spacingSM) {
+                            if isSaving {
+                                ProgressView()
+                                    .tint(Theme.paper)
+                            }
+                            Text(isSaving ? "Saving…" : "Put it in the journal")
+                        }
+                    }
+                    .buttonStyle(.press)
+                    .disabled(isSaving)
+
+                    MarginButton("Start over") {
+                        generatedPlan = nil
+                        linkedRecipes = [:]
+                        missingRecipes = []
+                    }
+                    .disabled(isSaving)
+                }
+                .padding(.top, Theme.spacingSM)
             }
         }
     }
@@ -423,12 +356,13 @@ struct AIMealPlanGeneratorView: View {
         defer { isSaving = false }
 
         let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
         dateFormatter.dateFormat = "yyyy-MM-dd"
 
         // Convert generated meals to PlannedMeal objects
         let plannedMeals: [PlannedMeal] = plan.meals.compactMap { genMeal in
             guard let date = dateFormatter.date(from: genMeal.date),
-                  let mealType = MealType(rawValue: genMeal.mealType) else { return nil }
+                  let mealType = MealType(rawValue: genMeal.mealType.lowercased()) else { return nil }
 
             let linkedRecipe = linkedRecipes[genMeal.recipeName]
 
@@ -464,149 +398,192 @@ struct AIMealPlanGeneratorView: View {
     }
 }
 
-// MARK: - Preference Summary Row
+// MARK: - Date line
 
-struct PreferenceSummaryRow: View {
-    let icon: String
+/// A date set as an index line — label, dot leader, the date — opening onto
+/// the calendar when tapped. Like `DateLine`, but it can keep to a range, so
+/// the last day of a menu can't come before the first.
+private struct MenuDateLine: View {
     let label: String
-    let value: String
+    @Binding var date: Date
+    var earliest: Date?
+    @State private var open = false
 
     var body: some View {
-        HStack(spacing: FAFSpacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundColor(.fafSage)
-                .frame(width: 20)
+        VStack(spacing: 0) {
+            Button {
+                withAnimation { open.toggle() }
+            } label: {
+                IndexEntry(
+                    title: label,
+                    figure: date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)),
+                    figureColor: Theme.ink
+                )
+            }
+            .buttonStyle(.plain)
 
-            Text(label)
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGray)
-                .frame(width: 60, alignment: .leading)
+            if open {
+                picker
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
+                    .tint(Theme.accent)
+                    .padding(.bottom, Theme.spacingSM)
+            }
+        }
+    }
 
-            Text(value)
-                .font(FAFTypography.bodySmall)
-                .foregroundColor(.fafTextPrimary)
-                .lineLimit(1)
-
-            Spacer()
+    @ViewBuilder
+    private var picker: some View {
+        if let earliest {
+            DatePicker("", selection: $date, in: earliest..., displayedComponents: .date)
+        } else {
+            DatePicker("", selection: $date, displayedComponents: .date)
         }
     }
 }
 
-// MARK: - Day Meals Card
+// MARK: - Preference line
 
-struct DayMealsCard: View {
+/// One of the house rules, set as a ledger line: the label in small caps in
+/// its own column, what it says beside it.
+private struct PreferenceLine: View {
+    let label: String
+    let value: String
+    var valueColor: Color = Theme.ink
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.spacingMD) {
+            Text(label.uppercased())
+                .smallCaps(10, weight: .semibold, tracking: 1.3)
+                .foregroundColor(Theme.ink3)
+                .frame(width: 76, alignment: .leading)
+
+            Text(value)
+                .font(.setting(15))
+                .foregroundColor(valueColor)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - A drafted day
+
+/// One day of the drafted menu, set the way a saved menu sets it: the day
+/// as a chapter head, each meal a stamped line underneath.
+private struct DraftMenuDay: View {
     let dateString: String
     let meals: [GeneratedPlannedMeal]
     let linkedRecipes: [String: Recipe]
     let missingRecipes: Set<String>
 
-    private var formattedDate: String {
+    private var date: Date? {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
-        guard let date = formatter.date(from: dateString) else { return dateString }
+        return formatter.date(from: dateString)
+    }
 
-        let displayFormatter = DateFormatter()
-        displayFormatter.dateFormat = "EEEE, MMM d"
-        return displayFormatter.string(from: date)
+    private var dayName: String {
+        guard let date else { return dateString }
+        return date.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))
+    }
+
+    /// Breakfast to snack, whatever order they came back in.
+    private var orderedMeals: [GeneratedPlannedMeal] {
+        meals.enumerated().sorted { lhs, rhs in
+            let l = MealType(rawValue: lhs.element.mealType.lowercased())?.sortOrder ?? 9
+            let r = MealType(rawValue: rhs.element.mealType.lowercased())?.sortOrder ?? 9
+            return l == r ? lhs.offset < rhs.offset : l < r
+        }
+        .map(\.element)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text(formattedDate)
-                .font(FAFTypography.h3)
-                .foregroundColor(.fafTextPrimary)
+        let isToday = date.map { Calendar.current.isDateInToday($0) } ?? false
+        VStack(alignment: .leading, spacing: 0) {
+            ChapterHead(name: dayName, tally: isToday ? "TODAY" : nil)
+            Rule(color: isToday ? Theme.accent : Theme.rule)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
 
-            ForEach(meals, id: \.recipeName) { meal in
-                PlannedMealRow(
+            ForEach(Array(orderedMeals.enumerated()), id: \.offset) { position, meal in
+                DraftMealLine(
                     meal: meal,
                     linkedRecipe: linkedRecipes[meal.recipeName],
                     isMissing: missingRecipes.contains(meal.recipeName)
                 )
+                if position < orderedMeals.count - 1 {
+                    DashedDivider()
+                }
             }
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 }
 
-// MARK: - Planned Meal Row
-
-struct PlannedMealRow: View {
+/// One drafted meal: its stamp, the dish — in the serif when it's already a
+/// recipe in the box, in italic when it's only a name so far — and the
+/// cook's note underneath.
+private struct DraftMealLine: View {
     let meal: GeneratedPlannedMeal
     let linkedRecipe: Recipe?
     let isMissing: Bool
 
-    var body: some View {
-        HStack(spacing: FAFSpacing.md) {
-            // Meal type icon
-            VStack {
-                Image(systemName: mealTypeIcon)
-                    .font(.system(size: 16))
-                    .foregroundColor(.fafSage)
-
-                Text(meal.mealType.capitalized)
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
-            }
-            .frame(width: 60)
-
-            // Recipe info
-            VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-                HStack(spacing: FAFSpacing.xs) {
-                    Text(meal.recipeName)
-                        .font(FAFTypography.body)
-                        .foregroundColor(.fafTextPrimary)
-                        .lineLimit(1)
-
-                    if linkedRecipe != nil {
-                        Image(systemName: "link")
-                            .font(.system(size: 12))
-                            .foregroundColor(.fafSage)
-                    } else if isMissing {
-                        Image(systemName: "plus.circle")
-                            .font(.system(size: 12))
-                            .foregroundColor(.fafOrange)
-                    }
-                }
-
-                if let notes = meal.notes {
-                    Text(notes)
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer()
-
-            // Recipe image or placeholder
-            if let recipe = linkedRecipe, let imageURL = recipe.firstImageURL, let url = URL(string: imageURL) {
-                AsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Color.fafGrayXLight
-                }
-                .frame(width: 44, height: 44)
-                .cornerRadius(FAFRadius.sm)
-            }
-        }
-        .padding(FAFSpacing.sm)
-        .background(Color.fafBackgroundSecondary)
-        .cornerRadius(FAFRadius.md)
+    private var mealType: MealType? {
+        MealType(rawValue: meal.mealType.lowercased())
     }
 
-    private var mealTypeIcon: String {
-        switch meal.mealType.lowercased() {
-        case "breakfast": return "sunrise"
-        case "lunch": return "sun.max"
-        case "dinner": return "moon"
-        case "snack": return "leaf"
-        default: return "fork.knife"
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.spacingSM) {
+                Group {
+                    if let mealType {
+                        MealStamp(mealType: mealType)
+                    } else {
+                        Text(meal.mealType.uppercased())
+                            .smallCaps(9, weight: .bold, tracking: 1.0)
+                            .foregroundColor(Theme.ink2)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(width: 54, alignment: .leading)
+
+                Text(linkedRecipe?.title ?? meal.recipeName)
+                    .font(linkedRecipe == nil ? .setting(15).italic() : .plate(17, .semibold))
+                    .foregroundColor(linkedRecipe == nil ? Theme.ink2 : Theme.ink)
+                    .lineLimit(2)
+                    .layoutPriority(1)
+
+                if let linkedRecipe {
+                    DotLeader()
+                    Text(linkedRecipe.totalTimeMinutes?.printedMinutes ?? "In the box")
+                        .font(linkedRecipe.totalTimeMinutes == nil ? .setting(11).italic() : .figure(13, .semibold))
+                        .foregroundColor(Theme.accent)
+                        .fixedSize()
+                } else {
+                    Spacer(minLength: 0)
+                    if isMissing {
+                        Text("To write".uppercased())
+                            .smallCaps(9, weight: .semibold, tracking: 1.2)
+                            .foregroundColor(Theme.ink3)
+                            .fixedSize()
+                    }
+                }
+            }
+
+            if let notes = meal.notes, !notes.isEmpty {
+                Text(notes)
+                    .font(.setting(12))
+                    .foregroundColor(Theme.ink3)
+                    .lineLimit(2)
+                    .padding(.leading, 54 + Theme.spacingSM)
+            }
         }
+        .padding(.vertical, 11)
+        .accessibilityElement(children: .combine)
     }
 }
 

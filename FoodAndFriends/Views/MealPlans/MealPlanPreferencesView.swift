@@ -1,21 +1,43 @@
 import SwiftUI
 
+/// The house rules for a menu — what the kitchen keeps to, what it keeps
+/// out, which meals to plan. Set as a printed checklist: tick what applies.
+///
+/// Changes are pencilled on a draft and only written back on Save, so
+/// Cancel really does leave the preferences as they were.
 struct MealPlanPreferencesView: View {
     @Environment(\.dismiss) var dismiss
     @Binding var preferences: MealPlanPreferences
 
+    @State private var draft: MealPlanPreferences
+
+    init(preferences: Binding<MealPlanPreferences>) {
+        _preferences = preferences
+        _draft = State(initialValue: preferences.wrappedValue)
+    }
+
+    private let twoColumns = [
+        GridItem(.flexible(), spacing: Theme.spacingMD, alignment: .leading),
+        GridItem(.flexible(), spacing: Theme.spacingMD, alignment: .leading)
+    ]
+
     var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: FAFSpacing.lg) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.spacingXL) {
+                    PlateHeader(title: "Preferences", subtitle: "What the menu keeps to")
+
+                    // Meal Types
+                    mealTypesSection
+
                     // Dietary Restrictions
                     dietaryRestrictionsSection
 
-                    // Cuisine Preferences
-                    cuisineSection
-
                     // Allergens
                     allergensSection
+
+                    // Cuisine Preferences
+                    cuisineSection
 
                     // Calorie Goal
                     calorieGoalSection
@@ -23,32 +45,54 @@ struct MealPlanPreferencesView: View {
                     // Skill Level
                     skillLevelSection
 
-                    // Meal Types
-                    mealTypesSection
-
                     // Quick Meals
                     quickMealsSection
                 }
-                .padding(FAFSpacing.lg)
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.fafBackground.ignoresSafeArea())
-            .navigationTitle("Meal Preferences")
+            .background(Theme.paper)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
+            .plainToolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    MarginButton("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    MarginButton("Save") {
+                        preferences = draft
                         dismiss()
                     }
-                    .foregroundColor(.fafGray)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        dismiss()
+            }
+        }
+    }
+
+    // MARK: - Meal Types Section
+
+    private var mealTypesSection: some View {
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "Meals to plan", figure: "\(draft.mealTypes.count) of \(MealType.allCases.count)")
+
+            LazyVGrid(columns: twoColumns, alignment: .leading, spacing: 0) {
+                ForEach(MealType.allCases, id: \.self) { mealType in
+                    ChecklistLine(
+                        title: mealType.displayName,
+                        ticked: draft.mealTypes.contains(mealType)
+                    ) {
+                        if draft.mealTypes.contains(mealType) {
+                            draft.mealTypes.removeAll { $0 == mealType }
+                        } else {
+                            draft.mealTypes.append(mealType)
+                        }
                     }
-                    .foregroundColor(.fafSage)
-                    .fontWeight(.semibold)
                 }
+            }
+
+            if draft.mealTypes.isEmpty {
+                Text("Tick at least one — a menu needs something to plan.")
+                    .font(.setting(12).italic())
+                    .foregroundColor(Theme.error)
             }
         }
     }
@@ -56,276 +100,188 @@ struct MealPlanPreferencesView: View {
     // MARK: - Dietary Restrictions Section
 
     private var dietaryRestrictionsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            SectionLabel(title: "Dietary Restrictions", subtitle: "Select any that apply")
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "Diet", figure: tally(draft.dietaryRestrictions.count))
 
-            FlowLayout(spacing: FAFSpacing.sm) {
+            LazyVGrid(columns: twoColumns, alignment: .leading, spacing: 0) {
                 ForEach(DietaryRestriction.allCases) { restriction in
-                    ToggleChip(
+                    ChecklistLine(
                         title: restriction.displayName,
-                        isSelected: preferences.dietaryRestrictions.contains(restriction)
+                        ticked: draft.dietaryRestrictions.contains(restriction)
                     ) {
-                        if preferences.dietaryRestrictions.contains(restriction) {
-                            preferences.dietaryRestrictions.removeAll { $0 == restriction }
+                        if draft.dietaryRestrictions.contains(restriction) {
+                            draft.dietaryRestrictions.removeAll { $0 == restriction }
                         } else {
-                            preferences.dietaryRestrictions.append(restriction)
+                            draft.dietaryRestrictions.append(restriction)
                         }
                     }
                 }
             }
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
-    }
-
-    // MARK: - Cuisine Section
-
-    private var cuisineSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            SectionLabel(title: "Cuisine Preferences", subtitle: "Select your favorite cuisines")
-
-            FlowLayout(spacing: FAFSpacing.sm) {
-                ForEach(CuisineType.allCases) { cuisine in
-                    ToggleChip(
-                        title: cuisine.rawValue,
-                        isSelected: preferences.cuisinePreferences.contains(cuisine.rawValue)
-                    ) {
-                        if preferences.cuisinePreferences.contains(cuisine.rawValue) {
-                            preferences.cuisinePreferences.removeAll { $0 == cuisine.rawValue }
-                        } else {
-                            preferences.cuisinePreferences.append(cuisine.rawValue)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
     // MARK: - Allergens Section
 
     private var allergensSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            SectionLabel(title: "Allergens", subtitle: "Select allergens to avoid")
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "Keep out", figure: tally(draft.allergens.count))
 
-            FlowLayout(spacing: FAFSpacing.sm) {
+            LazyVGrid(columns: twoColumns, alignment: .leading, spacing: 0) {
                 ForEach(CommonAllergen.allCases) { allergen in
-                    ToggleChip(
+                    ChecklistLine(
                         title: allergen.rawValue,
-                        isSelected: preferences.allergens.contains(allergen.rawValue),
-                        selectedColor: .fafCoral
+                        ticked: draft.allergens.contains(allergen.rawValue),
+                        tickedInk: Theme.error
                     ) {
-                        if preferences.allergens.contains(allergen.rawValue) {
-                            preferences.allergens.removeAll { $0 == allergen.rawValue }
+                        if draft.allergens.contains(allergen.rawValue) {
+                            draft.allergens.removeAll { $0 == allergen.rawValue }
                         } else {
-                            preferences.allergens.append(allergen.rawValue)
+                            draft.allergens.append(allergen.rawValue)
                         }
                     }
                 }
             }
+
+            Text("Anything ticked stays out of every dish.")
+                .font(.setting(12).italic())
+                .foregroundColor(Theme.ink3)
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
+    }
+
+    // MARK: - Cuisine Section
+
+    private var cuisineSection: some View {
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "Cuisines", figure: tally(draft.cuisinePreferences.count))
+
+            LazyVGrid(columns: twoColumns, alignment: .leading, spacing: 0) {
+                ForEach(CuisineType.allCases) { cuisine in
+                    ChecklistLine(
+                        title: cuisine.rawValue,
+                        ticked: draft.cuisinePreferences.contains(cuisine.rawValue)
+                    ) {
+                        if draft.cuisinePreferences.contains(cuisine.rawValue) {
+                            draft.cuisinePreferences.removeAll { $0 == cuisine.rawValue }
+                        } else {
+                            draft.cuisinePreferences.append(cuisine.rawValue)
+                        }
+                    }
+                }
+            }
+
+            Text("None ticked, and Claude cooks from anywhere.")
+                .font(.setting(12).italic())
+                .foregroundColor(Theme.ink3)
+        }
     }
 
     // MARK: - Calorie Goal Section
 
     private var calorieGoalSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            SectionLabel(title: "Calorie Goal", subtitle: "Optional - portion guidance")
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "Portions", figure: "Optional")
 
-            HStack(spacing: FAFSpacing.sm) {
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(CalorieGoal.allCases) { goal in
-                    CalorieGoalButton(
-                        goal: goal,
-                        isSelected: preferences.calorieGoal == goal
+                    ChecklistLine(
+                        title: goal.displayName,
+                        note: goal.description,
+                        ticked: draft.calorieGoal == goal
                     ) {
-                        if preferences.calorieGoal == goal {
-                            preferences.calorieGoal = nil
+                        if draft.calorieGoal == goal {
+                            draft.calorieGoal = nil
                         } else {
-                            preferences.calorieGoal = goal
+                            draft.calorieGoal = goal
                         }
                     }
                 }
             }
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
     // MARK: - Skill Level Section
 
     private var skillLevelSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            SectionLabel(title: "Cooking Skill Level", subtitle: "Affects recipe complexity")
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "How you cook")
 
-            HStack(spacing: FAFSpacing.sm) {
-                ForEach(SkillLevel.allCases) { level in
-                    SkillLevelButton(
-                        level: level,
-                        isSelected: preferences.cookingSkillLevel == level
-                    ) {
-                        preferences.cookingSkillLevel = level
-                    }
-                }
-            }
+            IndexSelector(
+                options: SkillLevel.allCases.map { (value: $0, label: $0.displayName) },
+                selection: $draft.cookingSkillLevel
+            )
+
+            Text(draft.cookingSkillLevel.description)
+                .font(.setting(12).italic())
+                .foregroundColor(Theme.ink3)
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
-    }
-
-    // MARK: - Meal Types Section
-
-    private var mealTypesSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            SectionLabel(title: "Meals to Plan", subtitle: "Which meals should we include?")
-
-            HStack(spacing: FAFSpacing.sm) {
-                ForEach(MealType.allCases, id: \.self) { mealType in
-                    ToggleChip(
-                        title: mealType.displayName,
-                        isSelected: preferences.mealTypes.contains(mealType)
-                    ) {
-                        if preferences.mealTypes.contains(mealType) {
-                            preferences.mealTypes.removeAll { $0 == mealType }
-                        } else {
-                            preferences.mealTypes.append(mealType)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
     // MARK: - Quick Meals Section
 
     private var quickMealsSection: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-                Text("Prefer Quick Meals")
-                    .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafTextPrimary)
-                Text("Prioritize recipes under 30 minutes")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
+        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+            SectionHead(title: "Time")
+
+            ChecklistLine(
+                title: "Keep it quick",
+                note: "Mostly dishes under 30 minutes",
+                ticked: draft.quickMealsPreferred
+            ) {
+                draft.quickMealsPreferred.toggle()
             }
-            Spacer()
-            Toggle("", isOn: $preferences.quickMealsPreferred)
-                .tint(.fafSage)
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
+    }
+
+    // MARK: - Helpers
+
+    private func tally(_ count: Int) -> String? {
+        count == 0 ? nil : "\(count) ticked"
     }
 }
 
-// MARK: - Section Label
+// MARK: - Checklist line
 
-struct SectionLabel: View {
+/// One line of a printed checklist: a ruled box, the item beside it, an
+/// optional note set small underneath. Tap anywhere on the line to tick it.
+private struct ChecklistLine: View {
     let title: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-            Text(title)
-                .font(FAFTypography.bodyBold)
-                .foregroundColor(.fafTextPrimary)
-            Text(subtitle)
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGray)
-        }
-    }
-}
-
-// MARK: - Toggle Chip
-
-struct ToggleChip: View {
-    let title: String
-    let isSelected: Bool
-    var selectedColor: Color = .fafSage
+    var note: String?
+    let ticked: Bool
+    /// The ink a ticked item is set in — ink for a preference, the error
+    /// ink for something kept out.
+    var tickedInk: Color = Theme.ink
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(FAFTypography.caption)
-                .foregroundColor(isSelected ? .white : .fafTextPrimary)
-                .padding(.horizontal, FAFSpacing.md)
-                .padding(.vertical, FAFSpacing.sm)
-                .background(isSelected ? selectedColor : Color.fafBackgroundSecondary)
-                .cornerRadius(FAFRadius.full)
-                .overlay(
-                    RoundedRectangle(cornerRadius: FAFRadius.full)
-                        .stroke(isSelected ? selectedColor : Color.fafDivider, lineWidth: 1)
-                )
-        }
-    }
-}
+        Button {
+            withAnimation(.easeOut(duration: 0.12)) { action() }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.spacingSM + 2) {
+                TickBox(ticked: ticked, size: 16)
+                    .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 3 }
 
-// MARK: - Calorie Goal Button
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.setting(15, ticked ? .medium : .regular))
+                        .foregroundColor(ticked ? tickedInk : Theme.ink2)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
 
-struct CalorieGoalButton: View {
-    let goal: CalorieGoal
-    let isSelected: Bool
-    let action: () -> Void
+                    if let note {
+                        Text(note)
+                            .font(.setting(12).italic())
+                            .foregroundColor(Theme.ink3)
+                    }
+                }
 
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: FAFSpacing.xs) {
-                Text(goal.displayName)
-                    .font(FAFTypography.label)
-                    .foregroundColor(isSelected ? .fafSage : .fafTextPrimary)
-
-                Text(goal.description)
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity)
-            .padding(FAFSpacing.md)
-            .background(isSelected ? Color.fafSage.opacity(0.1) : Color.fafBackgroundSecondary)
-            .cornerRadius(FAFRadius.md)
-            .overlay(
-                RoundedRectangle(cornerRadius: FAFRadius.md)
-                    .stroke(isSelected ? Color.fafSage : Color.fafDivider, lineWidth: 1)
-            )
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
         }
-    }
-}
-
-// MARK: - Skill Level Button
-
-struct SkillLevelButton: View {
-    let level: SkillLevel
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: FAFSpacing.xs) {
-                Text(level.displayName)
-                    .font(FAFTypography.label)
-                    .foregroundColor(isSelected ? .fafSage : .fafTextPrimary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(FAFSpacing.md)
-            .background(isSelected ? Color.fafSage.opacity(0.1) : Color.fafBackgroundSecondary)
-            .cornerRadius(FAFRadius.md)
-            .overlay(
-                RoundedRectangle(cornerRadius: FAFRadius.md)
-                    .stroke(isSelected ? Color.fafSage : Color.fafDivider, lineWidth: 1)
-            )
-        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(ticked ? .isSelected : [])
     }
 }
 

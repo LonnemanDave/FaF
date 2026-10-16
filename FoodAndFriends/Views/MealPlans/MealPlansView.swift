@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// Menus — the weeks planned out. The one on now, the ones coming up, and
+/// the past ones filed underneath, each set as an index line with its dates
+/// carried across.
 struct MealPlansView: View {
     @ObservedObject var userService = UserService.shared
     @ObservedObject var mealPlanService = MealPlanService.shared
@@ -8,50 +11,81 @@ struct MealPlansView: View {
     @State private var hasLoaded = false
     @State private var showAIMealPlanGenerator = false
     @State private var showManualMealPlanCreator = false
-    @State private var showCreateOptions = false
+
+    private enum Season: String, CaseIterable {
+        case now = "On now"
+        case coming = "Coming up"
+        case past = "Past"
+    }
+
+    /// Compared by day, so a menu's last day still counts as on.
+    private func season(of plan: MealPlan) -> Season {
+        let calendar = Calendar.current
+        let now = Date()
+        if calendar.compare(now, to: plan.startDate, toGranularity: .day) == .orderedAscending { return .coming }
+        if calendar.compare(now, to: plan.endDate, toGranularity: .day) == .orderedDescending { return .past }
+        return .now
+    }
+
+    private var seasons: [(season: Season, plans: [MealPlan])] {
+        Season.allCases.compactMap { season in
+            let plans = mealPlanService.userMealPlans
+                .filter { self.season(of: $0) == season }
+                .sorted { season == .past ? $0.startDate > $1.startDate : $0.startDate < $1.startDate }
+            return plans.isEmpty ? nil : (season, plans)
+        }
+    }
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color.fafBackground
-                    .ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.spacingLG) {
+                    plate
 
-                Group {
-                    if !hasLoaded || mealPlanService.isLoading {
-                        MealPlansLoadingView()
+                    if !hasLoaded && mealPlanService.userMealPlans.isEmpty {
+                        ProgressView()
+                            .tint(Theme.ink3)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Theme.spacingXL)
                     } else if mealPlanService.userMealPlans.isEmpty {
-                        EmptyMealPlansView(onCreateMealPlan: { showCreateOptions = true })
+                        BlankLeaf(
+                            note: "No menus planned yet. Plan a week and its dinners turn up on Home each day.",
+                            action: (label: "Plan a menu", run: { showManualMealPlanCreator = true })
+                        )
                     } else {
-                        MealPlansList(mealPlans: mealPlanService.userMealPlans)
+                        ForEach(seasons, id: \.season) { group in
+                            VStack(alignment: .leading, spacing: 0) {
+                                SectionHead(title: group.season.rawValue, figure: "\(group.plans.count)")
+                                    .padding(.bottom, 2)
+                                ForEach(Array(group.plans.enumerated()), id: \.element.id) { position, plan in
+                                    NavigationLink(value: plan) {
+                                        IndexEntry(
+                                            title: plan.name,
+                                            subtitle: summary(of: plan),
+                                            figure: plan.printedDates,
+                                            figureColor: group.season == .now ? Theme.accent : Theme.ink2,
+                                            dimmed: group.season == .past,
+                                            serifTitle: true
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    if position < group.plans.count - 1 {
+                                        DashedDivider()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .navigationTitle("Meal Plans")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showCreateOptions = true
-                    } label: {
-                        FAFIcon(.plus, size: 20, color: .fafCoral)
-                    }
-                }
-            }
-            .confirmationDialog("Create Meal Plan", isPresented: $showCreateOptions, titleVisibility: .visible) {
-                if aiService.hasValidAPIKey {
-                    Button {
-                        showAIMealPlanGenerator = true
-                    } label: {
-                        Label("Generate with AI", systemImage: "sparkles")
-                    }
-                }
-                Button {
-                    showManualMealPlanCreator = true
-                } label: {
-                    Label("Create Manually", systemImage: "pencil")
-                }
-            } message: {
-                Text("How would you like to create your meal plan?")
+            .background(Theme.paper)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: MealPlan.self) { plan in
+                MealPlanDetailView(mealPlan: plan)
             }
             .sheet(isPresented: $showAIMealPlanGenerator) {
                 AIMealPlanGeneratorView()
@@ -71,228 +105,103 @@ struct MealPlansView: View {
         }
     }
 
+    // MARK: - Plate
+
+    private var plusMark: some View {
+        Image(systemName: "plus")
+            .font(.system(size: 17, weight: .medium))
+            .foregroundColor(Theme.ink)
+            .frame(width: 36, height: 36, alignment: .trailing)
+            .contentShape(Rectangle())
+    }
+
+    private var plate: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DoubleRule()
+                .padding(.bottom, 12)
+
+            HStack(alignment: .firstTextBaseline) {
+                Text("Menus")
+                    .font(.plate(32))
+                    .foregroundColor(Theme.ink)
+
+                Spacer(minLength: Theme.spacingSM)
+
+                // With the assistant, + offers a choice; without it, + just opens the form.
+                if aiService.hasValidAPIKey {
+                    Menu {
+                        Button {
+                            showManualMealPlanCreator = true
+                        } label: {
+                            Label("Plan a menu", systemImage: "square.and.pencil")
+                        }
+                        Button {
+                            showAIMealPlanGenerator = true
+                        } label: {
+                            Label("Ask for a menu", systemImage: "sparkles")
+                        }
+                    } label: {
+                        plusMark
+                    }
+                    .accessibilityLabel("Plan a menu")
+                } else {
+                    Button {
+                        showManualMealPlanCreator = true
+                    } label: {
+                        plusMark
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Plan a menu")
+                }
+            }
+
+            Text(edition.uppercased())
+                .smallCaps(10, weight: .medium, tracking: 1.4)
+                .foregroundColor(Theme.ink2)
+                .padding(.top, 4)
+
+            Rule()
+                .padding(.top, 12)
+        }
+        .padding(.top, Theme.spacingSM)
+    }
+
+    private var edition: String {
+        let count = mealPlanService.userMealPlans.count
+        switch count {
+        case 0: return "The week, planned · none yet"
+        case 1: return "The week, planned · 1 menu"
+        default: return "The week, planned · \(count) menus"
+        }
+    }
+
+    // MARK: - Lines
+
+    /// "6 days · 8 meals · Stew tonight, leftovers tomorrow."
+    private func summary(of plan: MealPlan) -> String {
+        var parts = [
+            "\(plan.numberOfDays) \(plan.numberOfDays == 1 ? "day" : "days")",
+            "\(plan.totalMeals) \(plan.totalMeals == 1 ? "meal" : "meals")",
+        ]
+        if let description = plan.description, !description.isEmpty { parts.append(description) }
+        return parts.joined(separator: " · ")
+    }
+
     private func loadMealPlans() async {
         guard let userId = userService.currentUser?.id else { return }
         await mealPlanService.fetchUserMealPlans(userId: userId)
     }
 }
 
-// MARK: - Meal Plans List
-
-struct MealPlansList: View {
-    let mealPlans: [MealPlan]
-
-    private var activePlans: [MealPlan] {
-        let today = Date()
-        return mealPlans.filter { $0.startDate <= today && $0.endDate >= today }
-    }
-
-    private var upcomingPlans: [MealPlan] {
-        let today = Date()
-        return mealPlans.filter { $0.startDate > today }
-    }
-
-    private var pastPlans: [MealPlan] {
-        let today = Date()
-        return mealPlans.filter { $0.endDate < today }
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: FAFSpacing.xl) {
-                // Active Plans
-                if !activePlans.isEmpty {
-                    MealPlanSection(title: "Active", plans: activePlans, isActive: true)
-                }
-
-                // Upcoming Plans
-                if !upcomingPlans.isEmpty {
-                    MealPlanSection(title: "Upcoming", plans: upcomingPlans, isActive: false)
-                }
-
-                // Past Plans
-                if !pastPlans.isEmpty {
-                    MealPlanSection(title: "Past", plans: pastPlans, isActive: false)
-                }
-            }
-            .padding(.vertical, FAFSpacing.md)
+extension MealPlan {
+    /// "Oct 14–20", or "Sep 28 – Oct 4" when it runs across a month.
+    var printedDates: String {
+        let calendar = Calendar.current
+        let start = startDate.formatted(.dateTime.month(.abbreviated).day())
+        if calendar.isDate(startDate, equalTo: endDate, toGranularity: .month) {
+            return "\(start)–\(calendar.component(.day, from: endDate))"
         }
-    }
-}
-
-struct MealPlanSection: View {
-    let title: String
-    let plans: [MealPlan]
-    let isActive: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text(title)
-                .font(FAFTypography.h3)
-                .foregroundColor(.fafTextPrimary)
-                .padding(.horizontal, FAFSpacing.lg)
-
-            ForEach(plans) { plan in
-                MealPlanRowCard(mealPlan: plan, isActive: isActive)
-            }
-        }
-    }
-}
-
-struct MealPlanRowCard: View {
-    let mealPlan: MealPlan
-    let isActive: Bool
-
-    private var dateRangeText: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        let start = formatter.string(from: mealPlan.startDate)
-        let end = formatter.string(from: mealPlan.endDate)
-        return "\(start) - \(end)"
-    }
-
-    var body: some View {
-        NavigationLink(destination: MealPlanDetailView(mealPlan: mealPlan)) {
-            HStack(spacing: FAFSpacing.md) {
-                // Calendar icon with active indicator
-                ZStack {
-                    RoundedRectangle(cornerRadius: FAFRadius.sm)
-                        .fill(isActive ? Color.fafCoral.opacity(0.1) : Color.fafGrayXLight)
-                        .frame(width: 60, height: 60)
-
-                    FAFIcon(.calendar, size: 24, color: isActive ? .fafCoral : .fafGray)
-                }
-
-                VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                    HStack {
-                        Text(mealPlan.name)
-                            .font(FAFTypography.bodyBold)
-                            .foregroundColor(.fafTextPrimary)
-
-                        if isActive {
-                            Text("Active")
-                                .font(FAFTypography.caption)
-                                .foregroundColor(.fafWhite)
-                                .padding(.horizontal, FAFSpacing.xs)
-                                .padding(.vertical, 2)
-                                .background(Color.fafCoral)
-                                .cornerRadius(4)
-                        }
-                    }
-
-                    Text(dateRangeText)
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-
-                    HStack(spacing: FAFSpacing.md) {
-                        Label("\(mealPlan.numberOfDays) days", systemImage: "calendar")
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafGray)
-
-                        Label("\(mealPlan.totalMeals) meals", systemImage: "fork.knife")
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafGray)
-                    }
-                }
-
-                Spacer()
-
-                FAFIcon(.forward, size: 16, color: .fafGray)
-            }
-            .padding(FAFSpacing.md)
-            .background(Color.fafCardBackground)
-            .cornerRadius(FAFRadius.md)
-            .padding(.horizontal, FAFSpacing.lg)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Empty State
-
-struct EmptyMealPlansView: View {
-    var onCreateMealPlan: (() -> Void)? = nil
-
-    var body: some View {
-        VStack(spacing: FAFSpacing.lg) {
-            Spacer()
-
-            VStack(spacing: FAFSpacing.md) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 64))
-                    .foregroundColor(.fafGrayLight)
-
-                Text("No Meal Plans Yet")
-                    .font(FAFTypography.h2)
-                    .foregroundColor(.fafTextPrimary)
-
-                Text("Plan your meals for the week\nand never wonder what's for dinner")
-                    .font(FAFTypography.body)
-                    .foregroundColor(.fafGray)
-                    .multilineTextAlignment(.center)
-            }
-
-            Button {
-                onCreateMealPlan?()
-            } label: {
-                HStack(spacing: FAFSpacing.sm) {
-                    FAFIcon(.plus, size: 16, color: .fafWhite)
-                    Text("Create Meal Plan")
-                        .font(FAFTypography.button)
-                }
-                .foregroundColor(.fafWhite)
-                .padding(.horizontal, FAFSpacing.xl)
-                .padding(.vertical, FAFSpacing.md)
-                .background(Color.fafSage)
-                .cornerRadius(FAFRadius.md)
-            }
-
-            Spacer()
-        }
-        .padding(FAFSpacing.lg)
-    }
-}
-
-// MARK: - Loading State
-
-struct MealPlansLoadingView: View {
-    var body: some View {
-        ScrollView {
-            VStack(spacing: FAFSpacing.md) {
-                ForEach(0..<4, id: \.self) { _ in
-                    HStack(spacing: FAFSpacing.md) {
-                        RoundedRectangle(cornerRadius: FAFRadius.sm)
-                            .fill(Color.fafGrayXLight)
-                            .frame(width: 60, height: 60)
-
-                        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.fafGrayXLight)
-                                .frame(height: 16)
-                                .frame(maxWidth: 150)
-
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.fafGrayXXLight)
-                                .frame(height: 12)
-                                .frame(maxWidth: 100)
-
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.fafGrayXXLight)
-                                .frame(height: 12)
-                                .frame(maxWidth: 120)
-                        }
-
-                        Spacer()
-                    }
-                    .padding(FAFSpacing.md)
-                    .background(Color.fafCardBackground)
-                    .cornerRadius(FAFRadius.md)
-                    .padding(.horizontal, FAFSpacing.lg)
-                }
-            }
-            .padding(.vertical, FAFSpacing.md)
-        }
-        .redacted(reason: .placeholder)
+        return "\(start) – \(endDate.formatted(.dateTime.month(.abbreviated).day()))"
     }
 }
 

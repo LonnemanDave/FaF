@@ -76,7 +76,10 @@ class MealPlanService: ObservableObject {
         newMealPlan.authorUsername = author.username
         newMealPlan.authorProfileImageURL = author.profileImageURL
 
-        let docRef = try db.collection(mealPlansCollection).addDocument(from: newMealPlan)
+        // Wait for the server to have it: the rules only let you read a menu
+        // that exists and is yours, so nothing may race ahead of this write.
+        let docRef = db.collection(mealPlansCollection).document()
+        try await docRef.setData(Firestore.Encoder().encode(newMealPlan))
 
         // Create activity for feed
         let activity = Activity(
@@ -91,10 +94,8 @@ class MealPlanService: ObservableObject {
         )
         try db.collection(activitiesCollection).addDocument(from: activity)
 
-        // Fetch and return created meal plan
-        guard let created = try await fetchMealPlan(id: docRef.documentID) else {
-            throw MealPlanServiceError.mealPlanNotFound
-        }
+        var created = newMealPlan
+        created.id = docRef.documentID
         return created
     }
 
@@ -107,6 +108,9 @@ class MealPlanService: ObservableObject {
     }
 
     func fetchUserMealPlans(userId: String) async {
+        #if DEBUG
+        if DesignHarness.isOn { return } // the gallery's sample kitchen stays put
+        #endif
         isLoading = true
         defer { isLoading = false }
 

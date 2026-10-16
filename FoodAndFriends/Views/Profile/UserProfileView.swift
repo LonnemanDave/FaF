@@ -1,234 +1,160 @@
 import SwiftUI
 
+/// A friend's page in your journal: who they are, their figures, and the
+/// recipes they've written down, set as an index you can open.
 struct UserProfileView: View {
     let user: FAFUser
 
     @ObservedObject var recipeService = RecipeService.shared
     @ObservedObject var friendService = FriendService.shared
+    @ObservedObject var userService = UserService.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var userRecipes: [Recipe] = []
     @State private var isLoading = true
+    @State private var confirmRemove = false
+
+    private var isFriend: Bool {
+        guard let id = user.id else { return false }
+        return userService.currentUser?.friends.contains(id) ?? false
+    }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 0) {
-                // Hero Header
-                headerSection
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.spacingLG) {
+                header
 
-                // Content
-                VStack(spacing: FAFSpacing.lg) {
-                    // Stats Cards
-                    statsSection
+                Figures(items: [
+                    (label: "Friends", value: "\(user.friends.count)"),
+                    (label: "Recipes", value: isLoading ? "—" : "\(userRecipes.count)"),
+                    (label: "Since", value: user.createdAt.formatted(.dateTime.month(.abbreviated).year())),
+                ])
 
-                    // User's Recipes
-                    recipesSection
-                }
-                .padding(.horizontal, FAFSpacing.lg)
-                .padding(.top, FAFSpacing.lg)
-                .padding(.bottom, FAFSpacing.xxxl)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.fafBackground.ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("@\(user.username)")
-                    .font(FAFTypography.h3)
-                    .foregroundColor(.fafTextPrimary)
-            }
-        }
-        .task {
-            await loadUserRecipes()
-        }
-    }
-
-    // MARK: - Header Section
-
-    private var headerSection: some View {
-        VStack(spacing: 0) {
-            // Banner background
-            ZStack(alignment: .bottom) {
-                ProfileHeaderBackground()
-                    .frame(height: 160)
-
-                // Profile image
-                ZStack {
-                    Circle()
-                        .fill(Color.fafBackground)
-                        .frame(width: 148, height: 148)
-
-                    if let imageURL = user.profileImageURL, let url = URL(string: imageURL) {
-                        AsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Circle()
-                                .fill(Color.fafGrayXLight)
-                                .overlay(
-                                    FAFIcon(.profile, size: 48, color: .fafGray)
-                                )
-                        }
-                        .frame(width: 140, height: 140)
-                        .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 0) {
+                    SectionHead(title: "Their recipes", figure: isLoading ? nil : "\(userRecipes.count)")
+                        .padding(.bottom, 2)
+                    if isLoading {
+                        ProgressView()
+                            .tint(Theme.ink3)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Theme.spacingLG)
+                    } else if userRecipes.isEmpty {
+                        BlankLeaf(note: "Nothing written down yet.")
                     } else {
-                        Circle()
-                            .fill(Color.fafGrayXLight)
-                            .frame(width: 140, height: 140)
-                            .overlay(
-                                FAFIcon(.profile, size: 48, color: .fafGray)
-                            )
+                        let sorted = userRecipes.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+                        ForEach(Array(sorted.enumerated()), id: \.element.id) { position, recipe in
+                            NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
+                                IndexEntry(
+                                    title: recipe.title,
+                                    subtitle: recipe.description.isEmpty ? nil : recipe.description,
+                                    figure: recipe.totalTimeMinutes?.printedMinutes ?? "—",
+                                    serifTitle: true
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            if position < sorted.count - 1 {
+                                DashedDivider()
+                            }
+                        }
                     }
                 }
-                .shadow(color: .black.opacity(0.1), radius: 12, x: 0, y: 4)
-                .offset(y: 74)
+
+                if isFriend {
+                    MarginButton("Remove from your table", destructive: true) { confirmRemove = true }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, Theme.spacingSM)
+                }
             }
-
-            // User Info
-            VStack(spacing: FAFSpacing.xs) {
-                Text(user.displayName ?? user.username)
-                    .font(FAFTypography.h1)
-                    .foregroundColor(.fafTextPrimary)
-
-                if user.displayName != nil {
-                    Text("@\(user.username)")
-                        .font(FAFTypography.body)
-                        .foregroundColor(.fafGray)
-                }
-
-                HStack(spacing: FAFSpacing.xxxs) {
-                    FAFIcon(.location, size: 14, color: .fafGrayLight)
-                    Text(user.location)
-                        .font(FAFTypography.bodySmall)
-                        .foregroundColor(.fafGrayLight)
-                }
-                .padding(.top, FAFSpacing.xxxs)
-            }
-            .padding(.top, 80)
-            .padding(.bottom, FAFSpacing.md)
+            .padding(.top, Theme.spacingSM)
+            .padding(.bottom, Theme.spacingXL)
+            .page()
         }
-    }
-
-    // MARK: - Stats Section
-
-    private var statsSection: some View {
-        HStack(spacing: FAFSpacing.md) {
-            StatCard(
-                value: "\(user.friends.count)",
-                label: "Friends",
-                icon: .friends
-            )
-            StatCard(
-                value: "\(userRecipes.count)",
-                label: "Recipes",
-                icon: .fork
-            )
-        }
-    }
-
-    // MARK: - Recipes Section
-
-    private var recipesSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text("Recipes")
-                .font(FAFTypography.h3)
-                .foregroundColor(.fafTextPrimary)
-
-            if isLoading {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                }
-                .padding(.vertical, FAFSpacing.xl)
-            } else if userRecipes.isEmpty {
-                VStack(spacing: FAFSpacing.sm) {
-                    FAFIcon(.fork, size: 32, color: .fafGray)
-                    Text("No recipes yet")
-                        .font(FAFTypography.body)
-                        .foregroundColor(.fafGray)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, FAFSpacing.xl)
-                .background(Color.fafCardBackground)
-                .cornerRadius(FAFRadius.md)
-            } else {
-                LazyVStack(spacing: FAFSpacing.sm) {
-                    ForEach(userRecipes) { recipe in
-                        UserRecipeCard(recipe: recipe)
-                    }
+        .background(Theme.paper)
+        .navigationBarTitleDisplayMode(.inline)
+        .backLeaf()
+        .plainToolbar {
+            if let userId = user.id, userId != UserService.shared.currentUser?.id {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ModerationMenu(
+                        subject: ReportSubject(target: .user, targetId: userId, authorId: userId,
+                                               authorUsername: user.username, label: "@\(user.username)"),
+                        onBlocked: { dismiss() }
+                    )
                 }
             }
         }
+        .task { await loadUserRecipes() }
+        .confirmationDialog("Remove @\(user.username)?", isPresented: $confirmRemove, titleVisibility: .visible) {
+            Button("Remove from your table", role: .destructive) {
+                Task { await removeFriend() }
+            }
+        } message: {
+            Text("You'll stop seeing each other's cooking. You can ask them back any time.")
+        }
     }
 
-    // MARK: - Load Data
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DoubleRule()
+                .padding(.bottom, 12)
+            HStack(alignment: .center, spacing: Theme.spacingMD) {
+                Monogram(name: user.displayName ?? user.username, imageURL: user.profileImageURL, size: 64)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(user.displayName ?? user.username)
+                        .font(.plate(28))
+                        .foregroundColor(Theme.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(["@\(user.username)", user.location.isEmpty ? nil : user.location]
+                        .compactMap { $0 }.joined(separator: " · ").uppercased())
+                        .smallCaps(10, weight: .medium, tracking: 1.3)
+                        .foregroundColor(Theme.ink2)
+                        .lineLimit(1)
+                }
+            }
+            Rule()
+                .padding(.top, 12)
+        }
+    }
+
+    // MARK: - Data
 
     private func loadUserRecipes() async {
         guard let userId = user.id else {
             isLoading = false
             return
         }
-
+        #if DEBUG
+        if DesignHarness.isOn {
+            userRecipes = recipeService.globalRecipes.filter { $0.authorId == userId }
+            isLoading = false
+            return
+        }
+        #endif
         do {
-            userRecipes = try await recipeService.fetchRecipes(by: [userId], limit: 50)
+            userRecipes = try await recipeService.fetchRecipes(by: [userId], limit: 50, publicOnly: !isFriend)
         } catch {
             print("Error fetching user recipes: \(error)")
         }
-
         isLoading = false
     }
-}
 
-// MARK: - User Recipe Card
-
-struct UserRecipeCard: View {
-    let recipe: Recipe
-
-    var body: some View {
-        HStack(spacing: FAFSpacing.md) {
-            // Recipe image placeholder
-            RoundedRectangle(cornerRadius: FAFRadius.sm)
-                .fill(Color.fafGrayXLight)
-                .frame(width: 60, height: 60)
-                .overlay(
-                    FAFIcon(.fork, size: 20, color: .fafGray)
-                )
-
-            VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-                Text(recipe.title)
-                    .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafTextPrimary)
-                    .lineLimit(1)
-
-                if let time = recipe.totalTimeMinutes {
-                    Label("\(time) min", systemImage: "clock")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-                }
-            }
-
-            Spacer()
+    private func removeFriend() async {
+        guard let me = userService.currentUser?.id, let friendId = user.id else { return }
+        do {
+            try await friendService.removeFriend(currentUserId: me, friendId: friendId)
+            dismiss()
+        } catch {
+            print("Error removing friend: \(error)")
         }
-        .padding(FAFSpacing.sm)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.sm)
     }
 }
 
 #Preview {
     NavigationStack {
         UserProfileView(user: FAFUser(
-            id: "123",
-            email: "test@example.com",
-            username: "johndoe",
-            displayName: "John Doe",
-            location: "San Francisco, CA",
-            friends: ["1", "2", "3"],
-            createdAt: Date(),
-            updatedAt: Date()
+            id: "123", email: "test@example.com", username: "johndoe", displayName: "John Doe",
+            location: "San Francisco, CA", friends: ["1", "2", "3"], createdAt: Date(), updatedAt: Date()
         ))
     }
 }

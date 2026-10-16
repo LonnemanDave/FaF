@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// A menu set down by hand: a name, the days it runs, and the meals written
+/// in one at a time — each day a chapter, each meal a stamped line.
 struct ManualMealPlanCreatorView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var userService = UserService.shared
@@ -8,8 +10,11 @@ struct ManualMealPlanCreatorView: View {
 
     @State private var planName = ""
     @State private var planDescription = ""
-    @State private var startDate = Date()
-    @State private var endDate = Calendar.current.date(byAdding: .day, value: 6, to: Date()) ?? Date()
+    // Whole days, from midnight: a menu runs over days, not hours.
+    @State private var startDate = Calendar.current.startOfDay(for: Date())
+    @State private var endDate = Calendar.current.date(
+        byAdding: .day, value: 6, to: Calendar.current.startOfDay(for: Date())
+    ) ?? Date()
     @State private var meals: [PlannedMeal] = []
 
     @State private var showAddMeal = false
@@ -18,52 +23,59 @@ struct ManualMealPlanCreatorView: View {
     @State private var errorMessage = ""
 
     var numberOfDays: Int {
-        let days = Calendar.current.dateComponents([.day], from: startDate, to: endDate).day ?? 0
+        let calendar = Calendar.current
+        let days = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: startDate),
+            to: calendar.startOfDay(for: endDate)
+        ).day ?? 0
         return days + 1
     }
 
+    /// Every recipe within reach, once each — your own public recipes are in
+    /// both your box and everyone's, and a list can't hold one recipe twice.
     private var allRecipes: [Recipe] {
-        recipeService.globalRecipes + recipeService.friendsRecipes + recipeService.userRecipes
+        var seen = Set<String>()
+        return (recipeService.globalRecipes.unblocked + recipeService.friendsRecipes.unblocked + recipeService.userRecipes)
+            .filter { recipe in
+                guard let id = recipe.id else { return true }
+                return seen.insert(id).inserted
+            }
+    }
+
+    private var canSave: Bool {
+        !planName.trimmingCharacters(in: .whitespaces).isEmpty && !meals.isEmpty && !isSaving
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: FAFSpacing.lg) {
-                    // Plan Details
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.spacingXL) {
+                    PlateHeader(title: "A new menu", subtitle: "Set down by hand")
+
                     detailsSection
 
-                    // Date Range
                     dateRangeSection
 
-                    // Meals
                     mealsSection
 
-                    // Add Meal Button
-                    addMealButton
-
-                    // Save Button
-                    if !meals.isEmpty {
-                        saveButton
-                    }
+                    saveSection
                 }
-                .padding(FAFSpacing.lg)
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.fafBackground.ignoresSafeArea())
+            .background(Theme.paper)
+            .scrollDismissesKeyboard(.interactively)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        FAFIcon(.close, size: 20, color: .fafGrayDark)
-                    }
+            .plainToolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    MarginButton("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .principal) {
-                    Text("Create Meal Plan")
-                        .font(FAFTypography.h3)
-                        .foregroundColor(.fafTextPrimary)
+                ToolbarItem(placement: .topBarTrailing) {
+                    MarginButton("Save") { Task { await savePlan() } }
+                        .disabled(!canSave)
+                        .opacity(canSave ? 1 : 0.35)
                 }
             }
             .sheet(isPresented: $showAddMeal) {
@@ -84,130 +96,86 @@ struct ManualMealPlanCreatorView: View {
         }
     }
 
-    // MARK: - Details Section
+    // MARK: - Details
 
     private var detailsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text("Plan Details")
-                .font(FAFTypography.label)
-                .foregroundColor(.fafGrayDark)
-
-            VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                TextField("Plan name (e.g., Weekly Meals)", text: $planName)
-                    .font(FAFTypography.body)
-                    .padding(FAFSpacing.md)
-                    .background(Color.fafInputBackground)
-                    .cornerRadius(FAFRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FAFRadius.md)
-                            .stroke(Color.fafDivider, lineWidth: 1)
-                    )
-
-                TextField("Description (optional)", text: $planDescription)
-                    .font(FAFTypography.body)
-                    .padding(FAFSpacing.md)
-                    .background(Color.fafInputBackground)
-                    .cornerRadius(FAFRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FAFRadius.md)
-                            .stroke(Color.fafDivider, lineWidth: 1)
-                    )
-            }
+        VStack(alignment: .leading, spacing: Theme.spacingLG) {
+            FieldLine(label: "Name", text: $planName, prompt: "The week of the long braise")
+            FieldLine(
+                label: "A line about it",
+                text: $planDescription,
+                prompt: "What the week's for — optional",
+                multiline: true
+            )
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
-    // MARK: - Date Range Section
+    // MARK: - Dates
 
     private var dateRangeSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text("Date Range")
-                .font(FAFTypography.label)
-                .foregroundColor(.fafGrayDark)
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHead(title: "The days", figure: "\(numberOfDays) \(numberOfDays == 1 ? "day" : "days")")
+                .padding(.bottom, Theme.spacingXS)
 
-            HStack(spacing: FAFSpacing.md) {
-                VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                    Text("Start")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-
-                    DatePicker("", selection: $startDate, displayedComponents: .date)
-                        .labelsHidden()
-                        .onChange(of: startDate) { _, newValue in
-                            if endDate < newValue {
-                                endDate = newValue
-                            }
-                            // Remove meals outside date range
-                            meals.removeAll { meal in
-                                meal.date < newValue || meal.date > endDate
-                            }
-                        }
-                }
-
-                VStack(alignment: .leading, spacing: FAFSpacing.xs) {
-                    Text("End")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-
-                    DatePicker("", selection: $endDate, in: startDate..., displayedComponents: .date)
-                        .labelsHidden()
-                        .onChange(of: endDate) { _, newValue in
-                            // Remove meals outside date range
-                            meals.removeAll { meal in
-                                meal.date < startDate || meal.date > newValue
-                            }
-                        }
-                }
-
-                Spacer()
+            // The two menus people actually make: tonight, or the week ahead.
+            HStack(spacing: Theme.spacingLG) {
+                MarginButton("Just today") { setDays(1) }
+                MarginButton("A week") { setDays(7) }
+                Spacer(minLength: 0)
             }
+            .padding(.bottom, Theme.spacingSM)
 
-            Text("\(numberOfDays) day\(numberOfDays == 1 ? "" : "s")")
-                .font(FAFTypography.bodyBold)
-                .foregroundColor(.fafSage)
+            JournalDateLine(label: "Begins", date: $startDate)
+                .onChange(of: startDate) { _, newValue in
+                    if endDate < newValue {
+                        endDate = newValue
+                    }
+                    trimMeals(from: newValue, to: endDate)
+                }
+
+            DashedDivider()
+
+            JournalDateLine(label: "Ends", date: $endDate, from: startDate)
+                .onChange(of: endDate) { _, newValue in
+                    trimMeals(from: startDate, to: newValue)
+                }
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
-    // MARK: - Meals Section
+    /// From today, for this many days.
+    private func setDays(_ count: Int) {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        withAnimation(.easeOut(duration: 0.15)) {
+            startDate = today
+            endDate = calendar.date(byAdding: .day, value: count - 1, to: today) ?? today
+        }
+    }
+
+    /// Take out any meal that's fallen off the ends of the menu. Compared by
+    /// day, so a meal isn't lost to the hour its date happens to carry.
+    private func trimMeals(from start: Date, to end: Date) {
+        let calendar = Calendar.current
+        let first = calendar.startOfDay(for: start)
+        let last = calendar.startOfDay(for: end)
+        meals.removeAll { meal in
+            let day = calendar.startOfDay(for: meal.date)
+            return day < first || day > last
+        }
+    }
+
+    // MARK: - Meals
 
     private var mealsSection: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            HStack {
-                Text("Meals")
-                    .font(FAFTypography.label)
-                    .foregroundColor(.fafGrayDark)
-
-                Spacer()
-
-                Text("\(meals.count) meal\(meals.count == 1 ? "" : "s")")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
-            }
+        VStack(alignment: .leading, spacing: Theme.spacingLG) {
+            SectionHead(
+                title: "The meals",
+                figure: meals.isEmpty ? nil : "\(meals.count) \(meals.count == 1 ? "meal" : "meals")"
+            )
 
             if meals.isEmpty {
-                VStack(spacing: FAFSpacing.sm) {
-                    Image(systemName: "fork.knife")
-                        .font(.system(size: 32))
-                        .foregroundColor(.fafGrayLight)
-
-                    Text("No meals added yet")
-                        .font(FAFTypography.body)
-                        .foregroundColor(.fafGray)
-
-                    Text("Tap the button below to add meals to your plan")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGrayLight)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(FAFSpacing.xl)
+                BlankLeaf(note: "Nothing on the menu yet.\nAdd a meal, a day at a time.")
             } else {
-                // Group meals by date
                 ForEach(groupedMealsByDate, id: \.key) { date, dateMeals in
                     ManualDayMealsCard(
                         date: date,
@@ -218,10 +186,12 @@ struct ManualMealPlanCreatorView: View {
                     )
                 }
             }
+
+            Button(meals.isEmpty ? "Add the first meal" : "Add a meal") {
+                showAddMeal = true
+            }
+            .buttonStyle(.pressOutline)
         }
-        .padding(FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.lg)
     }
 
     private var groupedMealsByDate: [(key: Date, value: [PlannedMeal])] {
@@ -231,57 +201,34 @@ struct ManualMealPlanCreatorView: View {
         return grouped.sorted { $0.key < $1.key }
     }
 
-    // MARK: - Add Meal Button
+    // MARK: - Save
 
-    private var addMealButton: some View {
-        Button {
-            showAddMeal = true
-        } label: {
-            HStack(spacing: FAFSpacing.sm) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 18))
-                Text("Add Meal")
-                    .font(FAFTypography.button)
-            }
-            .foregroundColor(.fafSage)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, FAFSpacing.md)
-            .background(Color.fafSage.opacity(0.1))
-            .cornerRadius(FAFRadius.md)
-            .overlay(
-                RoundedRectangle(cornerRadius: FAFRadius.md)
-                    .stroke(Color.fafSage.opacity(0.3), lineWidth: 1)
-            )
-        }
-    }
-
-    // MARK: - Save Button
-
-    private var saveButton: some View {
-        Button {
-            Task { await savePlan() }
-        } label: {
-            HStack(spacing: FAFSpacing.sm) {
+    private var saveSection: some View {
+        VStack(spacing: Theme.spacingMD) {
+            Button {
+                Task { await savePlan() }
+            } label: {
                 if isSaving {
-                    ProgressView()
-                        .tint(.white)
+                    ProgressView().tint(Theme.paper)
+                } else {
+                    Text("Save the menu")
                 }
-                Text(isSaving ? "Saving..." : "Save Meal Plan")
-                    .font(FAFTypography.button)
             }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, FAFSpacing.md)
-            .background(planName.isEmpty ? Color.fafGray : Color.fafSage)
-            .cornerRadius(FAFRadius.md)
+            .buttonStyle(.press)
+            .disabled(!canSave)
+
+            if !canSave && !isSaving {
+                Text("A name and at least one meal, and it can be saved.")
+                    .font(.setting(12).italic())
+                    .foregroundColor(Theme.ink3)
+            }
         }
-        .disabled(isSaving || planName.isEmpty)
     }
 
     // MARK: - Actions
 
     private func savePlan() async {
-        guard let user = userService.currentUser else { return }
+        guard canSave, let user = userService.currentUser else { return }
 
         isSaving = true
         defer { isSaving = false }
@@ -307,63 +254,71 @@ struct ManualMealPlanCreatorView: View {
     }
 }
 
-// MARK: - Manual Day Meals Card
+// MARK: - A day of the menu
 
+/// One day as a chapter: the day's name, a rule, then its meals stamped in
+/// order — breakfast down to the snack — each with a mark to take it out.
 struct ManualDayMealsCard: View {
     let date: Date
     let meals: [PlannedMeal]
     let onDelete: (PlannedMeal) -> Void
 
-    private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMM d"
-        return formatter.string(from: date)
+    private var sortedMeals: [PlannedMeal] {
+        meals.sorted { $0.mealType.sortOrder < $1.mealType.sortOrder }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-            Text(formattedDate)
-                .font(FAFTypography.bodyBold)
-                .foregroundColor(.fafTextPrimary)
+        VStack(alignment: .leading, spacing: 0) {
+            ChapterHead(
+                name: date.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)),
+                tally: "\(meals.count)"
+            )
+            Rule()
+                .padding(.top, 6)
+                .padding(.bottom, 2)
 
-            ForEach(meals.sorted { $0.mealType.sortOrder < $1.mealType.sortOrder }) { meal in
-                HStack(spacing: FAFSpacing.md) {
-                    Image(systemName: meal.mealType.icon)
-                        .font(.system(size: 14))
-                        .foregroundColor(.fafSage)
-                        .frame(width: 24)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(meal.displayName)
-                            .font(FAFTypography.body)
-                            .foregroundColor(.fafTextPrimary)
-                            .lineLimit(1)
-
-                        Text(meal.mealType.displayName)
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafGray)
-                    }
-
-                    Spacer()
-
-                    Button {
-                        onDelete(meal)
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 18))
-                            .foregroundColor(.fafGrayLight)
-                    }
+            ForEach(Array(sortedMeals.enumerated()), id: \.element.id) { position, meal in
+                mealLine(meal)
+                if position < sortedMeals.count - 1 {
+                    DashedDivider()
                 }
-                .padding(FAFSpacing.sm)
-                .background(Color.fafBackgroundSecondary)
-                .cornerRadius(FAFRadius.sm)
             }
         }
     }
+
+    private func mealLine(_ meal: PlannedMeal) -> some View {
+        let fromBox = meal.recipeId != nil
+        return HStack(alignment: .firstTextBaseline, spacing: Theme.spacingSM) {
+            MealStamp(mealType: meal.mealType)
+                .frame(width: 54, alignment: .leading)
+
+            Text(meal.displayName)
+                .font(fromBox ? .plate(17, .semibold) : .setting(15).italic())
+                .foregroundColor(fromBox ? Theme.ink : Theme.ink2)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            Button {
+                onDelete(meal)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Theme.ink3)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Take \(meal.displayName) off the menu")
+        }
+        .padding(.vertical, 7)
+    }
 }
 
-// MARK: - Add Meal Sheet
+// MARK: - Add a meal
 
+/// Writing one meal into the menu: which day, which meal, and either a
+/// recipe from the box or a few words of your own.
 struct AddMealSheet: View {
     @Environment(\.dismiss) var dismiss
 
@@ -396,180 +351,138 @@ struct AddMealSheet: View {
         }.prefix(10).map { $0 }
     }
 
+    private var trimmedCustomName: String {
+        customMealName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var canAdd: Bool {
         if useExistingRecipe {
             return selectedRecipe != nil
         } else {
-            return !customMealName.isEmpty
+            return !trimmedCustomName.isEmpty
         }
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: FAFSpacing.lg) {
-                    // Date Selection
-                    VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                        Text("Date")
-                            .font(FAFTypography.label)
-                            .foregroundColor(.fafGrayDark)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.spacingXL) {
+                    PlateHeader(
+                        title: "Add a meal",
+                        subtitle: "\(startDate.printed) – \(endDate.printed)"
+                    )
 
-                        DatePicker("", selection: $selectedDate, in: startDate...endDate, displayedComponents: .date)
-                            .labelsHidden()
+                    VStack(alignment: .leading, spacing: 0) {
+                        SectionHead(title: "The day")
+                            .padding(.bottom, Theme.spacingXS)
+                        JournalDateLine(label: "On", date: $selectedDate, from: startDate, through: endDate)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(FAFSpacing.lg)
-                    .background(Color.fafCardBackground)
-                    .cornerRadius(FAFRadius.lg)
 
-                    // Meal Type Selection
-                    VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                        Text("Meal Type")
-                            .font(FAFTypography.label)
-                            .foregroundColor(.fafGrayDark)
-
-                        HStack(spacing: FAFSpacing.sm) {
-                            ForEach(MealType.allCases, id: \.self) { mealType in
-                                MealTypeChip(
-                                    mealType: mealType,
-                                    isSelected: selectedMealType == mealType
-                                ) {
-                                    selectedMealType = mealType
-                                }
-                            }
-                        }
+                    VStack(alignment: .leading, spacing: Theme.spacingMD) {
+                        SectionHead(title: "The meal")
+                        IndexSelector(
+                            options: MealType.allCases.map { (value: $0, label: $0.displayName) },
+                            selection: $selectedMealType
+                        )
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(FAFSpacing.lg)
-                    .background(Color.fafCardBackground)
-                    .cornerRadius(FAFRadius.lg)
 
-                    // Recipe Selection
-                    VStack(alignment: .leading, spacing: FAFSpacing.md) {
-                        // Toggle
-                        Picker("", selection: $useExistingRecipe) {
-                            Text("Existing Recipe").tag(true)
-                            Text("Custom Meal").tag(false)
-                        }
-                        .pickerStyle(.segmented)
+                    recipeSection
 
-                        if useExistingRecipe {
-                            // Recipe Search
-                            TextField("Search recipes...", text: $searchText)
-                                .font(FAFTypography.body)
-                                .padding(FAFSpacing.md)
-                                .background(Color.fafInputBackground)
-                                .cornerRadius(FAFRadius.md)
-
-                            // Recipe List
-                            ForEach(filteredRecipes) { recipe in
-                                RecipeSelectionRow(
-                                    recipe: recipe,
-                                    isSelected: selectedRecipe?.id == recipe.id
-                                ) {
-                                    selectedRecipe = recipe
-                                }
-                            }
-
-                            if filteredRecipes.isEmpty {
-                                Text("No recipes found")
-                                    .font(FAFTypography.body)
-                                    .foregroundColor(.fafGray)
-                                    .padding(FAFSpacing.md)
-                            }
-                        } else {
-                            // Custom Meal Name
-                            TextField("Meal name (e.g., Leftover night, Takeout)", text: $customMealName)
-                                .font(FAFTypography.body)
-                                .padding(FAFSpacing.md)
-                                .background(Color.fafInputBackground)
-                                .cornerRadius(FAFRadius.md)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: FAFRadius.md)
-                                        .stroke(Color.fafDivider, lineWidth: 1)
-                                )
-                        }
-                    }
-                    .padding(FAFSpacing.lg)
-                    .background(Color.fafCardBackground)
-                    .cornerRadius(FAFRadius.lg)
-
-                    // Add Button
-                    Button {
+                    Button("Add to the menu") {
                         addMeal()
-                    } label: {
-                        Text("Add Meal")
-                            .font(FAFTypography.button)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, FAFSpacing.md)
-                            .background(canAdd ? Color.fafSage : Color.fafGray)
-                            .cornerRadius(FAFRadius.md)
                     }
+                    .buttonStyle(.press)
                     .disabled(!canAdd)
                 }
-                .padding(FAFSpacing.lg)
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.fafBackground.ignoresSafeArea())
+            .background(Theme.paper)
+            .scrollDismissesKeyboard(.interactively)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .foregroundColor(.fafGray)
+            .plainToolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    MarginButton("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .principal) {
-                    Text("Add Meal")
-                        .font(FAFTypography.h3)
-                        .foregroundColor(.fafTextPrimary)
+                ToolbarItem(placement: .topBarTrailing) {
+                    MarginButton("Add") { addMeal() }
+                        .disabled(!canAdd)
+                        .opacity(canAdd ? 1 : 0.35)
                 }
             }
         }
     }
 
+    // MARK: - What's cooked
+
+    private var recipeSection: some View {
+        VStack(alignment: .leading, spacing: Theme.spacingMD) {
+            SectionHead(title: "What's cooked")
+
+            IndexSelector(
+                options: [(value: true, label: "A recipe"), (value: false, label: "In your own words")],
+                selection: $useExistingRecipe
+            )
+
+            if useExistingRecipe {
+                SearchLine(placeholder: "Find a recipe", text: $searchText)
+
+                if filteredRecipes.isEmpty {
+                    Text(allRecipes.isEmpty
+                         ? "There are no recipes in the box yet."
+                         : "Nothing in the box by that name.")
+                        .font(.setting(13).italic())
+                        .foregroundColor(Theme.ink3)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(filteredRecipes.enumerated()), id: \.offset) { position, recipe in
+                            RecipeSelectionRow(
+                                recipe: recipe,
+                                isSelected: selectedRecipe?.id == recipe.id
+                            ) {
+                                selectedRecipe = recipe
+                            }
+                            if position < filteredRecipes.count - 1 {
+                                DashedDivider()
+                            }
+                        }
+                    }
+                    .plate()
+                }
+            } else {
+                FieldLine(
+                    label: "The meal",
+                    text: $customMealName,
+                    prompt: "Leftovers, takeout, dinner out"
+                )
+            }
+        }
+    }
+
     private func addMeal() {
+        guard canAdd else { return }
+        // Only the side that's showing counts — a recipe picked and then
+        // abandoned for your own words mustn't ride along with them.
+        let recipe = useExistingRecipe ? selectedRecipe : nil
         let meal = PlannedMeal(
             date: selectedDate,
             mealType: selectedMealType,
-            recipeId: selectedRecipe?.id,
-            customMealName: useExistingRecipe ? nil : customMealName,
+            recipeId: recipe?.id,
+            customMealName: useExistingRecipe ? nil : trimmedCustomName,
             notes: nil,
-            recipeTitle: selectedRecipe?.title ?? customMealName,
-            recipeImageURL: selectedRecipe?.firstImageURL
+            recipeTitle: recipe?.title ?? trimmedCustomName,
+            recipeImageURL: recipe?.firstImageURL
         )
         onAdd(meal)
         dismiss()
     }
 }
 
-// MARK: - Meal Type Chip
+// MARK: - Choosing a recipe
 
-struct MealTypeChip: View {
-    let mealType: MealType
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: FAFSpacing.xxs) {
-                Image(systemName: mealType.icon)
-                    .font(.system(size: 16))
-                Text(mealType.displayName)
-                    .font(FAFTypography.caption)
-            }
-            .foregroundColor(isSelected ? .white : .fafTextPrimary)
-            .padding(.horizontal, FAFSpacing.md)
-            .padding(.vertical, FAFSpacing.sm)
-            .background(isSelected ? Color.fafSage : Color.fafBackgroundSecondary)
-            .cornerRadius(FAFRadius.md)
-        }
-    }
-}
-
-// MARK: - Recipe Selection Row
-
+/// One recipe in the picker, set as an index line: a box to tick, the name
+/// in the serif, a dot leader, and its time.
 struct RecipeSelectionRow: View {
     let recipe: Recipe
     let isSelected: Bool
@@ -577,57 +490,86 @@ struct RecipeSelectionRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: FAFSpacing.md) {
-                // Recipe image
-                if let imageURL = recipe.firstImageURL, let url = URL(string: imageURL) {
-                    AsyncImage(url: url) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Color.fafGrayXLight
-                    }
-                    .frame(width: 44, height: 44)
-                    .cornerRadius(FAFRadius.sm)
+            HStack(alignment: .firstTextBaseline, spacing: Theme.spacingSM) {
+                TickBox(ticked: isSelected, size: 15)
+                    .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 2 }
+
+                Text(recipe.title)
+                    .font(.plate(17, .semibold))
+                    .foregroundColor(isSelected ? Theme.ink : Theme.ink2)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+
+                if let time = recipe.totalTimeMinutes {
+                    DotLeader()
+                    Text(time.printedMinutes)
+                        .font(.figure(13, .semibold))
+                        .foregroundColor(Theme.accent)
+                        .fixedSize()
                 } else {
-                    ZStack {
-                        Color.fafGrayXLight
-                        Image(systemName: "fork.knife")
-                            .font(.system(size: 16))
-                            .foregroundColor(.fafGray)
-                    }
-                    .frame(width: 44, height: 44)
-                    .cornerRadius(FAFRadius.sm)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(recipe.title)
-                        .font(FAFTypography.body)
-                        .foregroundColor(.fafTextPrimary)
-                        .lineLimit(1)
-
-                    if let time = recipe.totalTimeMinutes {
-                        Text("\(time) min")
-                            .font(FAFTypography.caption)
-                            .foregroundColor(.fafGray)
-                    }
-                }
-
-                Spacer()
-
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(.fafSage)
-                } else {
-                    Image(systemName: "circle")
-                        .font(.system(size: 22))
-                        .foregroundColor(.fafGrayLight)
+                    Spacer(minLength: 0)
                 }
             }
-            .padding(FAFSpacing.sm)
-            .background(isSelected ? Color.fafSage.opacity(0.1) : Color.fafBackgroundSecondary)
-            .cornerRadius(FAFRadius.md)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+// MARK: - A date with bounds
+
+/// A date set as an index line — label, dot leader, the date — that opens a
+/// calendar beneath it, held between whatever bounds the menu sets.
+private struct JournalDateLine: View {
+    let label: String
+    @Binding var date: Date
+    var from: Date = .distantPast
+    var through: Date = .distantFuture
+
+    @State private var open = false
+
+    /// Whole days, and never a backwards range — a ClosedRange with its
+    /// ends crossed traps. The lower end is the start of its day: the
+    /// calendar hands back midnight, which a bound at "now" would refuse,
+    /// and today could never be picked.
+    private var bounds: ClosedRange<Date> {
+        let calendar = Calendar.current
+        let lower = from == .distantPast ? from : calendar.startOfDay(for: from)
+        let upper = through == .distantFuture ? through
+            : (calendar.date(byAdding: DateComponents(day: 1, second: -1), to: calendar.startOfDay(for: through)) ?? through)
+        return lower...max(lower, upper)
+    }
+
+    /// Every pick set at the start of its day.
+    private var day: Binding<Date> {
+        Binding(
+            get: { date },
+            set: { date = Calendar.current.startOfDay(for: $0) }
+        )
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { open.toggle() }
+            } label: {
+                IndexEntry(
+                    title: label,
+                    figure: date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)),
+                    figureColor: open ? Theme.accent : Theme.ink
+                )
+            }
+            .buttonStyle(.plain)
+
+            if open {
+                DatePicker("", selection: day, in: bounds, displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
+                    .tint(Theme.accent)
+                    .padding(.bottom, Theme.spacingSM)
+            }
         }
     }
 }

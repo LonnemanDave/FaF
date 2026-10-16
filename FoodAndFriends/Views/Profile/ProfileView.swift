@@ -1,313 +1,263 @@
 import SwiftUI
 
+/// You — the inside cover: your portrait and name, the figures of your
+/// kitchen, and the few settings the journal has.
 struct ProfileView: View {
     @ObservedObject var authManager = AuthManager.shared
     @ObservedObject var userService = UserService.shared
+    @ObservedObject var recipeService = RecipeService.shared
+    @ObservedObject var mealPlanService = MealPlanService.shared
     @ObservedObject var appearanceManager = AppearanceManager.shared
     @ObservedObject var aiService = AIService.shared
+    @EnvironmentObject private var router: TabRouter
 
     @State private var selectedImage: UIImage?
     @State private var isUploading = false
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var showAISettings = false
+    @State private var showFriends = false
+    @State private var confirmSignOut = false
+    @State private var confirmDeleteAccount = false
+    @State private var isDeletingAccount = false
+    @State private var showBlocked = false
+    @ObservedObject private var moderation = ModerationService.shared
 
     var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    // Hero Header
-                    headerSection
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.spacingLG) {
+                    header
 
-                    // Content
-                    VStack(spacing: FAFSpacing.lg) {
-                        // Stats Cards
-                        statsSection
+                    Figures(items: [
+                        (label: "Friends", value: "\(userService.currentUser?.friends.count ?? 0)"),
+                        (label: "Recipes", value: "\(recipeService.userRecipes.count)"),
+                        (label: "Menus", value: "\(mealPlanService.userMealPlans.count)"),
+                    ])
 
-                        // Quick Actions
-                        quickActionsSection
-
-                        // Menu
-                        menuSection
-
-                        // Sign Out
-                        signOutSection
+                    VStack(alignment: .leading, spacing: 0) {
+                        SectionHead(title: "Your kitchen")
+                            .padding(.bottom, 2)
+                        kitchenLine("Friends", figure: "\(userService.currentUser?.friends.count ?? 0)") { showFriends = true }
+                        DashedDivider()
+                        kitchenLine("Recipes", figure: "\(recipeService.userRecipes.count)") { router.selection = .recipes }
+                        DashedDivider()
+                        kitchenLine("Menus", figure: "\(mealPlanService.userMealPlans.count)") { router.selection = .mealPlans }
                     }
-                    .padding(.horizontal, FAFSpacing.lg)
-                    .padding(.top, FAFSpacing.lg)
-                    .padding(.bottom, FAFSpacing.xxxl)
+
+                    VStack(alignment: .leading, spacing: Theme.spacingSM) {
+                        SectionHead(title: "Look")
+                        IndexSelector(
+                            options: AppearanceMode.allCases.map { (value: $0, label: $0.rawValue) },
+                            selection: Binding(
+                                get: { appearanceManager.appearanceMode },
+                                set: { mode in withAnimation(.easeInOut(duration: 0.2)) { appearanceManager.appearanceMode = mode } }
+                            )
+                        )
+                        Text(lookNote)
+                            .font(.setting(12).italic())
+                            .foregroundColor(Theme.ink3)
+                    }
+
+                    if AIService.isEnabled {
+                    VStack(alignment: .leading, spacing: 0) {
+                        SectionHead(title: "AI assistant")
+                            .padding(.bottom, 2)
+                        Button {
+                            showAISettings = true
+                        } label: {
+                            IndexEntry(
+                                title: "Claude API key",
+                                subtitle: aiService.hasValidAPIKey
+                                    ? "Recipes and menus can be asked for"
+                                    : "Add one to ask for recipes and menus",
+                                figure: aiService.hasValidAPIKey ? "Set" : "Not set",
+                                figureColor: aiService.hasValidAPIKey ? Theme.herb : Theme.ink3
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    }
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        SectionHead(title: "Privacy & safety")
+                            .padding(.bottom, 2)
+                        kitchenLine("Blocked", figure: "\(moderation.blockedIds.count)") { showBlocked = true }
+                        DashedDivider()
+                        linkLine("Terms of use", LegalLinks.terms)
+                        DashedDivider()
+                        linkLine("Privacy policy", LegalLinks.privacy)
+                        DashedDivider()
+                        linkLine("Help & support", LegalLinks.support)
+                    }
+
+                    VStack(spacing: Theme.spacingMD) {
+                        MarginButton("Sign out", destructive: true) { confirmSignOut = true }
+                        DashedDivider()
+                        VStack(spacing: 6) {
+                            MarginButton("Delete account", destructive: true) { confirmDeleteAccount = true }
+                                .accessibilityLabel("Delete account")
+                                .disabled(isDeletingAccount)
+                            Text("Removes your account and everything in it, for good.")
+                                .font(.setting(12).italic())
+                                .foregroundColor(Theme.ink3)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Theme.spacingMD)
                 }
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.fafBackground.ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Profile")
-                        .font(FAFTypography.h3)
-                        .foregroundColor(.fafTextPrimary)
-                }
-            }
+            .background(Theme.paper)
+            .toolbar(.hidden, for: .navigationBar)
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
             }
-            .sheet(isPresented: $showAISettings) {
-                AISettingsView()
-            }
-        }
-    }
-
-    // MARK: - Header Section
-
-    private var headerSection: some View {
-        VStack(spacing: 0) {
-            // Banner background
-            ZStack(alignment: .bottom) {
-                ProfileHeaderBackground()
-                    .frame(height: 160)
-
-                // Profile image overlapping the banner
-                ZStack {
-                    // Border ring
-                    Circle()
-                        .fill(Color.fafBackground)
-                        .frame(width: 148, height: 148)
-
-                    ProfileImagePicker(
-                        selectedImage: $selectedImage,
-                        currentImageURL: userService.currentUser?.profileImageURL,
-                        size: 140
-                    )
-
-                    if isUploading {
-                        Circle()
-                            .fill(Color.black.opacity(0.5))
-                            .frame(width: 140, height: 140)
-                            .overlay(
-                                ProgressView()
-                                    .tint(.white)
-                            )
-                    }
-                }
-                .shadow(color: .black.opacity(0.1), radius: 12, x: 0, y: 4)
-                .offset(y: 74)
-                .onChange(of: selectedImage) { _, newImage in
-                    if let image = newImage {
-                        Task { await uploadProfileImage(image) }
+            .confirmationDialog("Sign out?", isPresented: $confirmSignOut, titleVisibility: .visible) {
+                Button("Sign out", role: .destructive) {
+                    do {
+                        try authManager.signOut()
+                    } catch {
+                        errorMessage = error.localizedDescription
+                        showError = true
                     }
                 }
             }
-
-            // User Info - on white background
-            if let user = userService.currentUser {
-                VStack(spacing: FAFSpacing.xs) {
-                    // Display Name or Username as primary
-                    Text(user.displayName ?? user.username)
-                        .font(FAFTypography.h1)
-                        .foregroundColor(.fafTextPrimary)
-
-                    // Username (if display name exists)
-                    if user.displayName != nil {
-                        Text("@\(user.username)")
-                            .font(FAFTypography.body)
-                            .foregroundColor(.fafGray)
-                    }
-
-                    // Location
-                    HStack(spacing: FAFSpacing.xxxs) {
-                        FAFIcon(.location, size: 14, color: .fafGrayLight)
-                        Text(user.location)
-                            .font(FAFTypography.bodySmall)
-                            .foregroundColor(.fafGrayLight)
-                    }
-                    .padding(.top, FAFSpacing.xxxs)
+            .sheet(isPresented: $showBlocked) {
+                BlockedPeopleView()
+            }
+            .alert("Delete account?", isPresented: $confirmDeleteAccount) {
+                Button("Delete", role: .destructive) {
+                    Task { await deleteAccount() }
                 }
-                .padding(.top, 80) // Space for overlapping profile image
-                .padding(.bottom, FAFSpacing.md)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This permanently deletes your account and everything in it: your recipes and variations, menus, shopping lists, photos, and friends. It can't be undone.")
             }
-        }
-    }
-
-    // MARK: - Stats Section
-
-    private var statsSection: some View {
-        HStack(spacing: FAFSpacing.md) {
-            StatCard(
-                value: "\(userService.currentUser?.friends.count ?? 0)",
-                label: "Friends",
-                icon: .friends
-            )
-            StatCard(
-                value: "0",
-                label: "Recipes",
-                icon: .fork
-            )
-            StatCard(
-                value: "0",
-                label: "Meal Plans",
-                icon: .calendar
-            )
-        }
-    }
-
-    // MARK: - Quick Actions
-
-    private var quickActionsSection: some View {
-        HStack(spacing: FAFSpacing.md) {
-            QuickActionButton(
-                icon: .heart,
-                label: "Saved",
-                color: .fafCoral
-            ) {
-                // Saved recipes action
-            }
-
-            QuickActionButton(
-                icon: .calendar,
-                label: "Meal Plans",
-                color: .fafSage
-            ) {
-                // Meal plans action
-            }
-
-            QuickActionButton(
-                icon: .fork,
-                label: "My Recipes",
-                color: .fafOrange
-            ) {
-                // My recipes action
-            }
-        }
-    }
-
-    // MARK: - Menu Section
-
-    private var menuSection: some View {
-        VStack(spacing: FAFSpacing.xxs) {
-            ProfileMenuCard(
-                title: "Account Settings",
-                items: [
-                    ProfileMenuItem(icon: .profile, title: "Edit Profile"),
-                    ProfileMenuItem(icon: .bell, title: "Notifications"),
-                    ProfileMenuItem(icon: .settings, title: "Privacy")
-                ]
-            )
-
-            // AI Assistant Section
-            aiAssistantSection
-
-            // Appearance Section
-            appearanceSection
-
-            ProfileMenuCard(
-                title: "Support",
-                items: [
-                    ProfileMenuItem(icon: .chat, title: "Help Center"),
-                    ProfileMenuItem(icon: .star, title: "Rate the App")
-                ]
-            )
-        }
-    }
-
-    // MARK: - AI Assistant Section
-
-    private var aiAssistantSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("AI Assistant")
-                .font(FAFTypography.labelLarge)
-                .foregroundColor(.fafGray)
-                .padding(.horizontal, FAFSpacing.md)
-                .padding(.top, FAFSpacing.md)
-                .padding(.bottom, FAFSpacing.xs)
-
-            Button {
-                showAISettings = true
-            } label: {
-                HStack(spacing: FAFSpacing.md) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 20))
-                        .foregroundColor(aiService.hasValidAPIKey ? .fafSage : .fafGrayDark)
-                        .frame(width: 24)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Claude API Key")
-                            .font(FAFTypography.body)
-                            .foregroundColor(.fafTextPrimary)
-
-                        Text(aiService.hasValidAPIKey ? "Configured" : "Not configured")
-                            .font(FAFTypography.caption)
-                            .foregroundColor(aiService.hasValidAPIKey ? .fafSage : .fafGray)
-                    }
-
-                    Spacer()
-
-                    if aiService.hasValidAPIKey {
-                        Circle()
-                            .fill(Color.fafSage)
-                            .frame(width: 8, height: 8)
-                    }
-
-                    FAFIcon(.forward, size: 14, color: .fafGrayLight)
-                }
-                .padding(.horizontal, FAFSpacing.md)
-                .padding(.vertical, FAFSpacing.sm)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
-    }
-
-    // MARK: - Appearance Section
-
-    private var appearanceSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Appearance")
-                .font(FAFTypography.labelLarge)
-                .foregroundColor(.fafGray)
-                .padding(.horizontal, FAFSpacing.md)
-                .padding(.top, FAFSpacing.md)
-                .padding(.bottom, FAFSpacing.xs)
-
-            HStack(spacing: FAFSpacing.sm) {
-                ForEach(AppearanceMode.allCases, id: \.self) { mode in
-                    AppearanceModeButton(
-                        mode: mode,
-                        isSelected: appearanceManager.appearanceMode == mode
-                    ) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            appearanceManager.appearanceMode = mode
+            .overlay {
+                if isDeletingAccount {
+                    ZStack {
+                        Theme.paper.opacity(0.85).ignoresSafeArea()
+                        VStack(spacing: Theme.spacingSM) {
+                            ProgressView().tint(Theme.ink)
+                            Text("Deleting your account…")
+                                .font(.setting(14).italic())
+                                .foregroundColor(Theme.ink2)
                         }
                     }
                 }
             }
-            .padding(.horizontal, FAFSpacing.md)
-            .padding(.bottom, FAFSpacing.md)
+            .sheet(isPresented: $showAISettings) {
+                AISettingsView()
+            }
+            .sheet(isPresented: $showFriends) {
+                FriendsView(showsClose: true)
+            }
+            .onChange(of: selectedImage) { _, newImage in
+                if let image = newImage {
+                    Task { await uploadProfileImage(image) }
+                }
+            }
         }
-        .background(Color.fafBackgroundSecondary)
-        .cornerRadius(FAFRadius.md)
     }
 
-    // MARK: - Sign Out Section
+    // MARK: - Header
 
-    private var signOutSection: some View {
-        Button {
-            do {
-                try authManager.signOut()
-            } catch {
-                print("Sign out error: \(error)")
+    /// The inside cover: portrait in a ruled square, the name, where you cook.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DoubleRule()
+                .padding(.bottom, 14)
+            HStack(alignment: .center, spacing: Theme.spacingMD) {
+                ZStack {
+                    ProfileImagePicker(
+                        selectedImage: $selectedImage,
+                        currentImageURL: userService.currentUser?.profileImageURL,
+                        size: 88
+                    )
+                    if isUploading {
+                        Theme.paper.opacity(0.7)
+                            .frame(width: 88, height: 88)
+                        ProgressView().tint(Theme.ink)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(name)
+                        .font(.plate(28))
+                        .foregroundColor(Theme.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(subtitle.uppercased())
+                        .smallCaps(10, weight: .medium, tracking: 1.3)
+                        .foregroundColor(Theme.ink2)
+                        .lineLimit(2)
+                }
             }
-        } label: {
-            Text("Sign Out")
-                .font(FAFTypography.button)
-                .foregroundColor(.fafCoral)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, FAFSpacing.md)
+            Rule()
+                .padding(.top, 14)
         }
-        .padding(.top, FAFSpacing.md)
+        .padding(.top, Theme.spacingSM)
+    }
+
+    private var name: String {
+        guard let user = userService.currentUser else { return "You" }
+        if let display = user.displayName, !display.isEmpty { return display }
+        return user.username
+    }
+
+    private var subtitle: String {
+        guard let user = userService.currentUser else { return "" }
+        return ["@\(user.username)", user.location.isEmpty ? nil : user.location].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private var lookNote: String {
+        switch appearanceManager.appearanceMode {
+        case .system: return "Follows your phone — paper by day, stone by night."
+        case .light: return "Always the paper edition."
+        case .dark: return "Always the stone edition."
+        }
+    }
+
+    /// A line that opens one of the web pages — terms, privacy, help.
+    private func linkLine(_ title: String, _ url: URL) -> some View {
+        Link(destination: url) {
+            IndexEntry(title: title, figure: "") {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Theme.ink3)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func kitchenLine(_ title: String, figure: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            IndexEntry(title: title, figure: figure, figureColor: Theme.ink) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Theme.ink3)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Delete Account
+
+    private func deleteAccount() async {
+        isDeletingAccount = true
+        defer { isDeletingAccount = false }
+        do {
+            try await userService.deleteAccount()
+        } catch {
+            errorMessage = "Your account couldn't be deleted. Check your connection and try again.\n\n\(error.localizedDescription)"
+            showError = true
+        }
     }
 
     // MARK: - Upload Image
@@ -335,197 +285,7 @@ struct ProfileView: View {
     }
 }
 
-// MARK: - Stat Card
-
-struct StatCard: View {
-    let value: String
-    let label: String
-    let icon: FAFIconType
-
-    var body: some View {
-        VStack(spacing: FAFSpacing.xs) {
-            FAFIcon(icon, size: 20, color: .fafGray)
-
-            Text(value)
-                .font(FAFTypography.h2)
-                .foregroundColor(.fafTextPrimary)
-
-            Text(label)
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGray)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, FAFSpacing.md)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
-    }
-}
-
-// MARK: - Quick Action Button
-
-struct QuickActionButton: View {
-    let icon: FAFIconType
-    let label: String
-    let color: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: FAFSpacing.xs) {
-                Circle()
-                    .fill(color.opacity(0.12))
-                    .frame(width: 52, height: 52)
-                    .overlay(
-                        FAFIcon(icon, size: 22, color: color)
-                    )
-
-                Text(label)
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGrayDark)
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
-}
-
-// MARK: - Profile Menu Card
-
-struct ProfileMenuCard: View {
-    let title: String
-    let items: [ProfileMenuItem]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(FAFTypography.labelLarge)
-                .foregroundColor(.fafGray)
-                .padding(.horizontal, FAFSpacing.md)
-                .padding(.top, FAFSpacing.md)
-                .padding(.bottom, FAFSpacing.xs)
-
-            ForEach(items.indices, id: \.self) { index in
-                items[index]
-
-                if index < items.count - 1 {
-                    Divider()
-                        .padding(.leading, FAFSpacing.md + 28)
-                }
-            }
-        }
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
-    }
-}
-
-// MARK: - Profile Menu Item
-
-struct ProfileMenuItem: View {
-    let icon: FAFIconType
-    let title: String
-    var action: (() -> Void)? = nil
-
-    var body: some View {
-        Button {
-            action?()
-        } label: {
-            HStack(spacing: FAFSpacing.md) {
-                FAFIcon(icon, size: 20, color: .fafGrayDark)
-                    .frame(width: 24)
-
-                Text(title)
-                    .font(FAFTypography.body)
-                    .foregroundColor(.fafTextPrimary)
-
-                Spacer()
-
-                FAFIcon(.forward, size: 14, color: .fafGrayLight)
-            }
-            .padding(.horizontal, FAFSpacing.md)
-            .padding(.vertical, FAFSpacing.sm)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Profile Header Background
-
-struct ProfileHeaderBackground: View {
-    // Pre-defined positions for consistent rendering
-    private let iconData: [(icon: String, size: CGFloat, rotation: Double, xOffset: CGFloat, yOffset: CGFloat)] = [
-        ("fork.knife", 28, -15, 0.1, 0.2),
-        ("leaf", 24, 20, 0.35, 0.15),
-        ("carrot", 30, -10, 0.6, 0.25),
-        ("cup.and.saucer", 26, 15, 0.85, 0.1),
-        ("frying.pan", 32, -20, 0.15, 0.5),
-        ("birthday.cake", 22, 25, 0.45, 0.45),
-        ("leaf", 28, -5, 0.7, 0.55),
-        ("fork.knife", 24, 10, 0.9, 0.4),
-        ("carrot", 26, -25, 0.25, 0.75),
-        ("cup.and.saucer", 30, 5, 0.55, 0.8),
-        ("frying.pan", 22, 15, 0.8, 0.7),
-        ("birthday.cake", 28, -10, 0.05, 0.85)
-    ]
-
-    // Colors for the food icons
-    private let iconColors: [Color] = [.fafCoral, .fafSage, .fafOrange]
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // Clean solid background
-                Color.fafBackgroundSecondary
-
-                // Scattered food icons in brand colors
-                ForEach(0..<iconData.count, id: \.self) { index in
-                    let data = iconData[index]
-                    let color = iconColors[index % iconColors.count]
-                    Image(systemName: data.icon)
-                        .font(.system(size: data.size, weight: .regular))
-                        .foregroundColor(color.opacity(0.4))
-                        .rotationEffect(.degrees(data.rotation))
-                        .position(
-                            x: geometry.size.width * data.xOffset,
-                            y: geometry.size.height * data.yOffset
-                        )
-                }
-            }
-        }
-        .clipped()
-    }
-}
-
-// MARK: - Appearance Mode Button
-
-struct AppearanceModeButton: View {
-    let mode: AppearanceMode
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: FAFSpacing.xs) {
-                Image(systemName: mode.icon)
-                    .font(.system(size: 20))
-                    .foregroundColor(isSelected ? .fafCoral : .fafGray)
-
-                Text(mode.rawValue)
-                    .font(FAFTypography.caption)
-                    .foregroundColor(isSelected ? .fafTextPrimary : .fafGray)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, FAFSpacing.sm)
-            .background(isSelected ? Color.fafCoralLight : Color.clear)
-            .cornerRadius(FAFRadius.sm)
-            .overlay(
-                RoundedRectangle(cornerRadius: FAFRadius.sm)
-                    .stroke(isSelected ? Color.fafCoral : Color.fafDivider, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 #Preview {
     ProfileView()
+        .environmentObject(TabRouter())
 }

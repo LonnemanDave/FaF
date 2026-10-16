@@ -6,6 +6,8 @@ struct RecipeStep: Codable, Identifiable, Hashable {
     var instruction: String
     var ingredientIds: [String]
     var orderIndex: Int
+    /// Photographs taken at this step while cooking it — nil until there are any.
+    var photoURLs: [String]?
 
     init(instruction: String, ingredientIds: [String] = [], orderIndex: Int = 0) {
         self.id = UUID().uuidString
@@ -175,5 +177,156 @@ struct Ingredient: Codable, Identifiable, Hashable {
             return "\(quantity) \(unit) \(name)"
         }
         return "\(quantity) \(name)"
+    }
+}
+
+// MARK: - The house stew
+
+extension Recipe {
+    /// Classic Beef Stew — one of the design gallery's sample recipes.
+    static func classicBeefStew(
+        authorId: String,
+        authorUsername: String?,
+        authorProfileImageURL: String? = nil
+    ) -> Recipe {
+        // Create ingredients with IDs we can reference
+        let beefChuck = Ingredient(name: "beef chuck, cubed", quantity: "2", unit: "lbs")
+        let potatoes = Ingredient(name: "potatoes, quartered", quantity: "4", unit: "medium")
+        let carrots = Ingredient(name: "carrots, sliced", quantity: "3", unit: "large")
+        let onion = Ingredient(name: "onion, diced", quantity: "1", unit: "large")
+        let beefBroth = Ingredient(name: "beef broth", quantity: "4", unit: "cups")
+        let tomatoPaste = Ingredient(name: "tomato paste", quantity: "2", unit: "tbsp")
+        let garlic = Ingredient(name: "garlic, minced", quantity: "4", unit: "cloves")
+        let thyme = Ingredient(name: "dried thyme", quantity: "1", unit: "tsp")
+        let salt = Ingredient(name: "salt", quantity: "1", unit: "tsp")
+        let pepper = Ingredient(name: "black pepper", quantity: "1/2", unit: "tsp")
+        let oliveOil = Ingredient(name: "olive oil", quantity: "2", unit: "tbsp")
+        let flour = Ingredient(name: "flour", quantity: "3", unit: "tbsp")
+
+        let allIngredients = [beefChuck, potatoes, carrots, onion, beefBroth, tomatoPaste, garlic, thyme, salt, pepper, oliveOil, flour]
+
+        // Create steps with per-step ingredients
+        let steps = [
+            RecipeStep(
+                instruction: "Cut beef into 1-inch cubes and season with salt and pepper. Toss with flour to coat.",
+                ingredientIds: [beefChuck.id, salt.id, pepper.id, flour.id],
+                orderIndex: 0
+            ),
+            RecipeStep(
+                instruction: "Heat olive oil in a large Dutch oven over medium-high heat. Brown beef in batches, about 3 minutes per side. Set aside.",
+                ingredientIds: [oliveOil.id],
+                orderIndex: 1
+            ),
+            RecipeStep(
+                instruction: "Add onions and garlic to the pot, cook until softened, about 3 minutes.",
+                ingredientIds: [onion.id, garlic.id],
+                orderIndex: 2
+            ),
+            RecipeStep(
+                instruction: "Stir in tomato paste and cook for 1 minute until darkened.",
+                ingredientIds: [tomatoPaste.id],
+                orderIndex: 3
+            ),
+            RecipeStep(
+                instruction: "Add beef broth and thyme, scraping up any browned bits from the bottom.",
+                ingredientIds: [beefBroth.id, thyme.id],
+                orderIndex: 4
+            ),
+            RecipeStep(
+                instruction: "Return beef to pot, bring to a boil, then reduce heat to low. Cover and simmer for 1 hour.",
+                ingredientIds: [],
+                orderIndex: 5
+            ),
+            RecipeStep(
+                instruction: "Add potatoes and carrots, continue cooking covered for 30 minutes until vegetables are tender.",
+                ingredientIds: [potatoes.id, carrots.id],
+                orderIndex: 6
+            ),
+            RecipeStep(
+                instruction: "Season with additional salt and pepper to taste. Serve hot with crusty bread.",
+                ingredientIds: [],
+                orderIndex: 7
+            )
+        ]
+
+        return Recipe(
+            authorId: authorId,
+            title: "Classic Beef Stew",
+            description: "A hearty, warming beef stew with tender chunks of beef, potatoes, and vegetables in a rich savory broth.",
+            ingredients: allIngredients,
+            steps: steps,
+            isPublic: true,
+            imageURLs: [],
+            servings: 6,
+            prepTimeMinutes: 20,
+            cookTimeMinutes: 90,
+            tags: ["dinner", "comfort food", "beef", "stew", "one-pot"],
+            authorUsername: authorUsername,
+            authorProfileImageURL: authorProfileImageURL
+        )
+
+    }
+}
+
+extension Recipe {
+    /// Beef & Guinness Stew, adapted from RecipeTin Eats
+    /// (recipetineats.com/irish-beef-and-guinness-stew). Method in our own words.
+    static func beefAndGuinnessStew(
+        authorId: String,
+        authorUsername: String?,
+        authorProfileImageURL: String? = nil
+    ) -> Recipe {
+        let beef = Ingredient(name: "beef chuck, boneless, in 2\" chunks", quantity: "2.5", unit: "lb")
+        let salt = Ingredient(name: "salt", quantity: "3/4", unit: "tsp")
+        let pepper = Ingredient(name: "black pepper", quantity: "3/4", unit: "tsp")
+        let oil = Ingredient(name: "olive oil", quantity: "2", unit: "tbsp")
+        let garlic = Ingredient(name: "garlic, minced", quantity: "3", unit: "cloves")
+        let onions = Ingredient(name: "onions, chopped", quantity: "2")
+        let bacon = Ingredient(name: "bacon or pancetta, diced", quantity: "6", unit: "oz")
+        let carrots = Ingredient(name: "carrots, in 1/2\" pieces", quantity: "3")
+        let celery = Ingredient(name: "celery stalks, in 1\" pieces", quantity: "2", unit: "large")
+        let flour = Ingredient(name: "flour", quantity: "3", unit: "tbsp")
+        let guinness = Ingredient(name: "Guinness", quantity: "14.9", unit: "oz")
+        let stock = Ingredient(name: "chicken stock", quantity: "3", unit: "cups")
+        let tomatoPaste = Ingredient(name: "tomato paste", quantity: "4", unit: "tbsp")
+        let bay = Ingredient(name: "bay leaves", quantity: "2")
+        let thyme = Ingredient(name: "fresh thyme (or 1 tsp dried)", quantity: "3", unit: "sprigs")
+
+        let all = [beef, salt, pepper, oil, garlic, onions, bacon, carrots, celery,
+                   flour, guinness, stock, tomatoPaste, bay, thyme]
+
+        let steps = [
+            RecipeStep(instruction: "Pat the beef dry and season it with the salt and pepper.",
+                       ingredientIds: [beef.id, salt.id, pepper.id], orderIndex: 0),
+            RecipeStep(instruction: "Heat the oil in a heavy pot over high heat and brown the beef in batches. Set it aside.",
+                       ingredientIds: [oil.id], orderIndex: 1),
+            RecipeStep(instruction: "Drop to medium. Soften the garlic and onion for about 3 minutes, then add the bacon and cook until browned.",
+                       ingredientIds: [garlic.id, onions.id, bacon.id], orderIndex: 2),
+            RecipeStep(instruction: "Stir in the carrot and celery, then the flour, and cook for a minute.",
+                       ingredientIds: [carrots.id, celery.id, flour.id], orderIndex: 3),
+            RecipeStep(instruction: "Stir in the Guinness, stock and tomato paste until smooth. Add the bay and thyme.",
+                       ingredientIds: [guinness.id, stock.id, tomatoPaste.id, bay.id, thyme.id], orderIndex: 4),
+            RecipeStep(instruction: "Return the beef and its juices — the liquid should just cover it. Cover and simmer gently for 2 hours.",
+                       orderIndex: 5),
+            RecipeStep(instruction: "Uncover and simmer another 30–45 minutes, until the beef falls apart and the sauce thickens.",
+                       orderIndex: 6),
+            RecipeStep(instruction: "Skim the fat if you like, check the seasoning, and fish out the bay and thyme stems. Serve over mashed potatoes.",
+                       orderIndex: 7),
+        ]
+
+        return Recipe(
+            authorId: authorId,
+            title: "Beef & Guinness Stew",
+            description: "Beef braised slowly in Guinness with bacon, carrot and celery until it falls apart. Serve over mashed potatoes. Adapted from RecipeTin Eats.",
+            ingredients: all,
+            steps: steps,
+            isPublic: false,
+            servings: 6,
+            prepTimeMinutes: 10,
+            cookTimeMinutes: 180,
+            tags: ["dinner", "stew", "beef", "irish"],
+            authorUsername: authorUsername,
+            authorProfileImageURL: authorProfileImageURL
+        )
     }
 }

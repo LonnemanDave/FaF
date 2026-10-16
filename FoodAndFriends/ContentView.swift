@@ -4,6 +4,32 @@ struct ContentView: View {
     @StateObject private var authManager = AuthManager.shared
 
     var body: some View {
+        #if DEBUG
+        if DesignHarness.isOn {
+            switch DesignHarness.screen {
+            case "login": LoginView()
+            case "setup": ProfileSetupView()
+            case "recipe-form": CreateRecipeView()
+            case "recipe-edit": CreateRecipeView(recipeToEdit: DesignHarness.guinness)
+            case "menu-form": ManualMealPlanCreatorView()
+            case "ai-recipe": AIRecipeGeneratorView()
+            case "ai-menu": AIMealPlanGeneratorView()
+            case "menu-prefs": MealPlanPreferencesView(preferences: .constant(.default))
+            case "ai-settings": AISettingsView()
+            case "friends": FriendsView()
+            case "add-friend": AddFriendView()
+            case "friend": NavigationStack { UserProfileView(user: DesignHarness.friends[0]) }
+            default: MainTabView()
+            }
+        } else {
+            signedInFlow
+        }
+        #else
+        signedInFlow
+        #endif
+    }
+
+    private var signedInFlow: some View {
         Group {
             switch authManager.authState {
             case .unknown:

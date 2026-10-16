@@ -1,476 +1,376 @@
 import SwiftUI
 
+/// Home — the journal's title page. The cook's name set as the book's own,
+/// today's menu, the figures, the recipe box set as an index, and what
+/// friends have been cooking. Recipes, Menus and the Table are one tap in.
 struct HomeView: View {
     @ObservedObject var userService = UserService.shared
     @ObservedObject var recipeService = RecipeService.shared
     @ObservedObject var mealPlanService = MealPlanService.shared
     @ObservedObject var feedService = FeedService.shared
+    @ObservedObject var moderation = ModerationService.shared
+    @EnvironmentObject private var router: TabRouter
 
     @State private var selectedRecipe: Recipe?
     @State private var selectedMealPlan: MealPlan?
+    @State private var showCreateRecipe = false
+    @State private var showCreateMenu = false
+    @State private var openingId: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: FAFSpacing.xl) {
-                    // Today's Meals Section
-                    TodaysMealsCard(mealPlans: mealPlanService.userMealPlans)
-
-                    // Quick Actions
-                    QuickActionsSection()
-
-                    // Recent Activity Preview
-                    RecentActivitySection(
-                        activities: Array(feedService.feedActivities.prefix(3)),
-                        onSelectRecipe: { selectedRecipe = $0 },
-                        onSelectMealPlan: { selectedMealPlan = $0 }
-                    )
-
-                    // My Recipes
-                    MyRecipesSection(recipes: recipeService.userRecipes)
+                VStack(alignment: .leading, spacing: Theme.spacingLG) {
+                    plate
+                    today
+                    figures
+                    recipeBox
+                    table
                 }
-                .padding(.vertical, FAFSpacing.lg)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.fafBackground.ignoresSafeArea())
-            .navigationTitle("Home")
-            .navigationBarTitleDisplayMode(.large)
+            .background(Theme.paper)
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $selectedRecipe) { recipe in
                 RecipeDetailView(recipe: recipe)
             }
             .navigationDestination(item: $selectedMealPlan) { mealPlan in
-                // TODO: MealPlanDetailView when implemented
-                Text("Meal Plan: \(mealPlan.name)")
+                MealPlanDetailView(mealPlan: mealPlan)
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            // TODO: Navigate to create recipe
-                        } label: {
-                            Label("New Recipe", systemImage: "fork.knife")
-                        }
-                        Button {
-                            // TODO: Navigate to create meal plan
-                        } label: {
-                            Label("New Meal Plan", systemImage: "calendar.badge.plus")
-                        }
-                    } label: {
-                        FAFIcon(.plus, size: 20, color: .fafCoral)
-                    }
-                }
+            .sheet(isPresented: $showCreateRecipe) {
+                CreateRecipeView()
+            }
+            .sheet(isPresented: $showCreateMenu) {
+                ManualMealPlanCreatorView()
             }
         }
     }
-}
 
-// MARK: - Today's Meals Card
+    // MARK: - Plate
 
-struct TodaysMealsCard: View {
-    let mealPlans: [MealPlan]
+    /// The title page: double rule, the cook's name as the book's title,
+    /// what the book is set underneath.
+    private var plate: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DoubleRule()
+                .padding(.bottom, 12)
 
-    private var todaysMeals: [PlannedMeal] {
-        let today = Date()
-        // Find active meal plan that includes today
-        guard let activePlan = mealPlans.first(where: { plan in
-            plan.startDate <= today && plan.endDate >= today
-        }) else {
-            return []
-        }
-        return activePlan.meals(for: today)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text("Today's Meals")
-                .font(FAFTypography.h3)
-                .foregroundColor(.fafTextPrimary)
-
-            VStack(spacing: FAFSpacing.sm) {
-                if todaysMeals.isEmpty {
-                    EmptyTodayCard()
-                } else {
-                    ForEach(MealType.allCases, id: \.self) { mealType in
-                        let meal = todaysMeals.first { $0.mealType == mealType }
-                        MealRow(mealType: mealType, meal: meal)
-                    }
-                }
-            }
-            .padding(FAFSpacing.md)
-            .background(Color.fafCardBackground)
-            .cornerRadius(FAFRadius.md)
-        }
-        .padding(.horizontal, FAFSpacing.lg)
-    }
-}
-
-struct EmptyTodayCard: View {
-    var body: some View {
-        VStack(spacing: FAFSpacing.sm) {
-            FAFIcon(.calendar, size: 32, color: .fafGray)
-            Text("No meals planned for today")
-                .font(FAFTypography.body)
-                .foregroundColor(.fafGray)
-            Text("Create a meal plan to get started")
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGrayLight)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, FAFSpacing.lg)
-    }
-}
-
-struct MealRow: View {
-    let mealType: MealType
-    let meal: PlannedMeal?
-
-    var body: some View {
-        HStack(spacing: FAFSpacing.sm) {
-            Image(systemName: mealType.icon)
-                .font(.system(size: 16))
-                .foregroundColor(.fafCoral)
-                .frame(width: 24)
-
-            Text(mealType.displayName)
-                .font(FAFTypography.bodyBold)
-                .foregroundColor(.fafTextPrimary)
-                .frame(width: 80, alignment: .leading)
-
-            if let meal = meal {
-                Text(meal.displayName)
-                    .font(FAFTypography.body)
-                    .foregroundColor(.fafGray)
+            HStack(alignment: .firstTextBaseline) {
+                Text(cookName)
+                    .font(.plate(32))
+                    .foregroundColor(Theme.ink)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Spacer(minLength: Theme.spacingSM)
+
+                Menu {
+                    Button {
+                        showCreateRecipe = true
+                    } label: {
+                        Label("New recipe", systemImage: "fork.knife")
+                    }
+                    Button {
+                        showCreateMenu = true
+                    } label: {
+                        Label("New menu", systemImage: "calendar.badge.plus")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(Theme.ink)
+                        .frame(width: 36, height: 36, alignment: .trailing)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Add to the journal")
+            }
+
+            Text(edition.uppercased())
+                .smallCaps(10, weight: .medium, tracking: 1.4)
+                .foregroundColor(Theme.ink2)
+                .padding(.top, 4)
+
+            Rule()
+                .padding(.top, 12)
+        }
+        .padding(.top, Theme.spacingSM)
+    }
+
+    /// Whose journal this is — the title itself.
+    private var cookName: String {
+        guard let user = userService.currentUser else { return "The Kitchen" }
+        if let name = user.displayName, !name.isEmpty { return name }
+        return user.username
+    }
+
+    /// The line under the title — what the book is, and how thick it is.
+    private var edition: String {
+        let count = recipeService.userRecipes.count
+        guard count > 0 else { return "A cook's journal · first edition" }
+        return "A cook's journal · \(count) \(count == 1 ? "recipe" : "recipes")"
+    }
+
+    // MARK: - Today
+
+    /// The menu that covers today, compared by day so its last day still counts.
+    private var activePlan: MealPlan? {
+        let calendar = Calendar.current
+        let now = Date()
+        return mealPlanService.userMealPlans.first { plan in
+            calendar.compare(now, to: plan.startDate, toGranularity: .day) != .orderedAscending
+                && calendar.compare(now, to: plan.endDate, toGranularity: .day) != .orderedDescending
+        }
+    }
+
+    private var today: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHead(
+                title: "Today",
+                figure: Date().formatted(.dateTime.weekday(.wide).day().month(.abbreviated))
+            )
+            .padding(.bottom, 2)
+
+            if let plan = activePlan {
+                let meals = plan.meals(for: Date())
+                ForEach(MealType.allCases, id: \.self) { type in
+                    todayLine(type: type, meal: meals.first { $0.mealType == type })
+                    if type != MealType.allCases.last {
+                        DashedDivider()
+                    }
+                }
+
+                Button {
+                    selectedMealPlan = plan
+                } label: {
+                    marginLink("The week's menu")
+                }
+                .buttonStyle(.plain)
             } else {
-                Text("Not planned")
-                    .font(FAFTypography.body)
-                    .foregroundColor(.fafGrayLight)
-                    .italic()
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, FAFSpacing.xs)
-    }
-}
-
-// MARK: - Quick Actions
-
-struct QuickActionsSection: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            Text("Quick Actions")
-                .font(FAFTypography.h3)
-                .foregroundColor(.fafTextPrimary)
-
-            HStack(spacing: FAFSpacing.md) {
-                DashboardActionButton(
-                    title: "New Recipe",
-                    icon: "fork.knife",
-                    color: .fafCoral
-                ) {
-                    // TODO: Navigate to create recipe
+                // Nothing planned is the usual day, not an empty page — one
+                // line, the same weight as any other, with planning in the margin.
+                HStack(alignment: .firstTextBaseline, spacing: Theme.spacingSM) {
+                    Text("Nothing planned")
+                        .font(.setting(15).italic())
+                        .foregroundColor(Theme.ink2)
+                    Spacer(minLength: Theme.spacingSM)
+                    MarginButton("Plan a menu") { showCreateMenu = true }
                 }
-
-                DashboardActionButton(
-                    title: "New Meal Plan",
-                    icon: "calendar.badge.plus",
-                    color: .fafSage
-                ) {
-                    // TODO: Navigate to create meal plan
-                }
+                .padding(.vertical, 11)
             }
         }
-        .padding(.horizontal, FAFSpacing.lg)
     }
-}
 
-struct DashboardActionButton: View {
-    let title: String
-    let icon: String
-    let color: Color
-    let action: () -> Void
+    private func todayLine(type: MealType, meal: PlannedMeal?) -> some View {
+        let recipe = meal.flatMap(recipe(for:))
+        return Button {
+            if let meal { open(meal) }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.spacingSM) {
+                MealStamp(mealType: type)
+                    .frame(width: 54, alignment: .leading)
 
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: FAFSpacing.sm) {
-                Image(systemName: icon)
-                    .font(.system(size: 24))
-                    .foregroundColor(color)
+                if let meal {
+                    Text(meal.displayName)
+                        .font(type == .dinner ? .plate(18, .semibold) : .setting(16))
+                        .foregroundColor(Theme.ink)
+                        .lineLimit(1)
+                        .layoutPriority(1)
 
-                Text(title)
-                    .font(FAFTypography.button)
-                    .foregroundColor(.fafTextPrimary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, FAFSpacing.lg)
-            .background(color.opacity(0.1))
-            .cornerRadius(FAFRadius.md)
-        }
-    }
-}
+                    if let minutes = recipe?.totalTimeMinutes {
+                        DotLeader()
+                        Text(minutes.printedMinutes)
+                            .font(.figure(13, .semibold))
+                            .foregroundColor(Theme.accent)
+                            .fixedSize()
+                    } else {
+                        Spacer(minLength: 0)
+                    }
 
-// MARK: - Recent Activity Section
-
-struct RecentActivitySection: View {
-    let activities: [Activity]
-    var onSelectRecipe: ((Recipe) -> Void)?
-    var onSelectMealPlan: ((MealPlan) -> Void)?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            HStack {
-                Text("Recent Activity")
-                    .font(FAFTypography.h3)
-                    .foregroundColor(.fafTextPrimary)
-
-                Spacer()
-
-                if !activities.isEmpty {
-                    Text("See All")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafCoral)
+                    if openingId == meal.id {
+                        ProgressView().tint(Theme.ink3).scaleEffect(0.7)
+                    }
+                } else {
+                    Text("Not planned")
+                        .font(.setting(15).italic())
+                        .foregroundColor(Theme.ink3)
+                    Spacer(minLength: 0)
                 }
             }
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(meal?.recipeId == nil)
+    }
 
-            if activities.isEmpty {
-                EmptyActivityPreview()
+    private func recipe(for meal: PlannedMeal) -> Recipe? {
+        guard let id = meal.recipeId else { return nil }
+        return (recipeService.userRecipes + recipeService.friendsRecipes.unblocked + recipeService.globalRecipes.unblocked)
+            .first { $0.id == id }
+    }
+
+    /// Opens the meal's recipe — from what's already loaded, or fetched if it isn't.
+    private func open(_ meal: PlannedMeal) {
+        if let recipe = recipe(for: meal) {
+            selectedRecipe = recipe
+            return
+        }
+        guard let id = meal.recipeId else { return }
+        openingId = meal.id
+        Task {
+            defer { openingId = nil }
+            selectedRecipe = try? await recipeService.fetchRecipe(id: id)
+        }
+    }
+
+    // MARK: - Figures
+
+    private var figures: some View {
+        Figures(items: [
+            (label: "Recipes", value: "\(recipeService.userRecipes.count)"),
+            (label: "Menus", value: "\(mealPlanService.userMealPlans.count)"),
+            (label: "Friends", value: "\(userService.currentUser?.friends.count ?? 0)"),
+        ])
+    }
+
+    // MARK: - The recipe box
+
+    private var recipeBox: some View {
+        let recipes = Array(recipeService.userRecipes.prefix(5))
+        return VStack(alignment: .leading, spacing: 0) {
+            SectionHead(title: "The recipe box", figure: "\(recipeService.userRecipes.count)")
+                .padding(.bottom, 2)
+
+            if recipes.isEmpty {
+                BlankLeaf(
+                    note: "No recipes written down yet.",
+                    action: (label: "Write one", run: { showCreateRecipe = true })
+                )
             } else {
-                VStack(spacing: FAFSpacing.sm) {
-                    ForEach(activities) { activity in
-                        CompactActivityCard(
-                            activity: activity,
-                            onSelectRecipe: onSelectRecipe,
-                            onSelectMealPlan: onSelectMealPlan
+                ForEach(Array(recipes.enumerated()), id: \.element.id) { index, recipe in
+                    Button {
+                        selectedRecipe = recipe
+                    } label: {
+                        IndexEntry(
+                            title: recipe.title,
+                            subtitle: recipe.description.isEmpty ? nil : recipe.description,
+                            figure: recipe.totalTimeMinutes?.printedMinutes ?? "—",
+                            serifTitle: true,
+                            mark: String(format: "%02d", index + 1)
                         )
                     }
+                    .buttonStyle(.plain)
+
+                    if index < recipes.count - 1 {
+                        DashedDivider()
+                    }
+                }
+
+                Button {
+                    router.selection = .recipes
+                } label: {
+                    marginLink("All recipes")
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - The table
+
+    /// What friends have been cooking — the latest three, not your own.
+    private var table: some View {
+        let latest = Array(
+            feedService.feedActivities.unblocked
+                .filter { $0.authorId != userService.currentUser?.id }
+                .prefix(3)
+        )
+        return VStack(alignment: .leading, spacing: 0) {
+            SectionHead(title: "At the table")
+                .padding(.bottom, 2)
+
+            if latest.isEmpty {
+                BlankLeaf(note: "When friends write down a recipe, it turns up here.")
+            } else {
+                ForEach(Array(latest.enumerated()), id: \.element.id) { index, activity in
+                    tableLine(activity)
+                    if index < latest.count - 1 {
+                        DashedDivider()
+                    }
                 }
             }
         }
-        .padding(.horizontal, FAFSpacing.lg)
     }
-}
 
-struct EmptyActivityPreview: View {
-    var body: some View {
-        VStack(spacing: FAFSpacing.sm) {
-            FAFIcon(.friends, size: 32, color: .fafGray)
-            Text("No recent activity")
-                .font(FAFTypography.body)
-                .foregroundColor(.fafGray)
-            Text("Add friends to see their recipes")
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGrayLight)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
-    }
-}
-
-struct CompactActivityCard: View {
-    let activity: Activity
-    var onSelectRecipe: ((Recipe) -> Void)?
-    var onSelectMealPlan: ((MealPlan) -> Void)?
-
-    @State private var isLoading = false
-
-    var body: some View {
+    private func tableLine(_ activity: Activity) -> some View {
         Button {
-            Task { await handleTap() }
+            open(activity)
         } label: {
-            HStack(spacing: FAFSpacing.sm) {
-                // Author avatar
-                if let imageURL = activity.authorProfileImageURL,
-                   let url = URL(string: imageURL) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        case .failure, .empty:
-                            placeholderAvatar
-                        @unknown default:
-                            placeholderAvatar
-                        }
-                    }
-                    .frame(width: 36, height: 36)
-                    .clipShape(Circle())
-                } else {
-                    placeholderAvatar
-                }
+            HStack(alignment: .center, spacing: 12) {
+                Monogram(
+                    name: activity.authorUsername ?? "?",
+                    imageURL: activity.authorProfileImageURL,
+                    size: 34
+                )
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("@\(activity.authorUsername ?? "unknown")")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-
-                    Text(activity.contentTitle ?? "Shared something")
-                        .font(FAFTypography.bodyBold)
-                        .foregroundColor(.fafTextPrimary)
+                    Text(activity.contentTitle ?? "Something new")
+                        .font(.plate(16, .semibold))
+                        .foregroundColor(Theme.ink)
+                        .lineLimit(1)
+                    Text("@\(activity.authorUsername ?? "someone") · \(activity.type.actionDescription)")
+                        .font(.setting(12))
+                        .foregroundColor(Theme.ink3)
                         .lineLimit(1)
                 }
 
-                Spacer()
+                Spacer(minLength: Theme.spacingSM)
 
-                if isLoading {
-                    ProgressView()
-                        .scaleEffect(0.8)
+                if openingId == activity.id {
+                    ProgressView().tint(Theme.ink3).scaleEffect(0.7)
                 } else {
                     Text(activity.createdAt.timeAgoDisplay())
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGrayLight)
+                        .font(.figure(11, .medium))
+                        .foregroundColor(Theme.ink3)
                 }
             }
-            .padding(FAFSpacing.sm)
-            .background(Color.fafCardBackground)
-            .cornerRadius(FAFRadius.sm)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    private var placeholderAvatar: some View {
-        Circle()
-            .fill(Color.fafGrayXLight)
-            .frame(width: 36, height: 36)
-            .overlay(
-                FAFIcon(.profile, size: 16, color: .fafGray)
-            )
-    }
-
-    private func handleTap() async {
-        isLoading = true
-        defer { isLoading = false }
-
-        if activity.isRecipeActivity, let recipeId = activity.recipeId {
-            do {
-                if let recipe = try await RecipeService.shared.fetchRecipe(id: recipeId) {
-                    onSelectRecipe?(recipe)
-                }
-            } catch {
-                print("Error fetching recipe: \(error)")
-            }
-        } else if activity.isMealPlanActivity, let mealPlanId = activity.mealPlanId {
-            do {
-                if let mealPlan = try await MealPlanService.shared.fetchMealPlan(id: mealPlanId) {
-                    onSelectMealPlan?(mealPlan)
-                }
-            } catch {
-                print("Error fetching meal plan: \(error)")
+    private func open(_ activity: Activity) {
+        openingId = activity.id
+        Task {
+            defer { openingId = nil }
+            if activity.isRecipeActivity, let id = activity.recipeId {
+                selectedRecipe = try? await recipeService.fetchRecipe(id: id)
+            } else if activity.isMealPlanActivity, let id = activity.mealPlanId {
+                selectedMealPlan = try? await mealPlanService.fetchMealPlan(id: id)
             }
         }
     }
-}
 
-// MARK: - My Recipes Section
+    // MARK: - Margin
 
-struct MyRecipesSection: View {
-    let recipes: [Recipe]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.md) {
-            HStack {
-                Text("My Recipes")
-                    .font(FAFTypography.h3)
-                    .foregroundColor(.fafTextPrimary)
-
-                Spacer()
-
-                if !recipes.isEmpty {
-                    Text("See All")
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafCoral)
-                }
-            }
-            .padding(.horizontal, FAFSpacing.lg)
-
-            if recipes.isEmpty {
-                EmptyRecipesPreview()
-                    .padding(.horizontal, FAFSpacing.lg)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: FAFSpacing.md) {
-                        ForEach(recipes.prefix(5)) { recipe in
-                            CompactRecipeCard(recipe: recipe)
-                        }
-                    }
-                    .padding(.horizontal, FAFSpacing.lg)
-                }
-            }
+    /// A "turn the page" link set small and flush right under a section.
+    private func marginLink(_ title: String) -> some View {
+        HStack(spacing: 4) {
+            Spacer()
+            Text(title.uppercased())
+                .smallCaps(10, weight: .semibold, tracking: 1.3)
+            Image(systemName: "arrow.right")
+                .font(.system(size: 9, weight: .semibold))
         }
-    }
-}
-
-struct EmptyRecipesPreview: View {
-    var body: some View {
-        VStack(spacing: FAFSpacing.sm) {
-            FAFIcon(.fork, size: 32, color: .fafGray)
-            Text("No recipes yet")
-                .font(FAFTypography.body)
-                .foregroundColor(.fafGray)
-            Text("Create your first recipe")
-                .font(FAFTypography.caption)
-                .foregroundColor(.fafGrayLight)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, FAFSpacing.lg)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
-    }
-}
-
-struct CompactRecipeCard: View {
-    let recipe: Recipe
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-            // Recipe image
-            Group {
-                if let imageURL = recipe.firstImageURL, let url = URL(string: imageURL) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        case .failure, .empty:
-                            recipePlaceholder
-                        @unknown default:
-                            recipePlaceholder
-                        }
-                    }
-                } else {
-                    recipePlaceholder
-                }
-            }
-            .frame(width: 120, height: 90)
-            .clipShape(RoundedRectangle(cornerRadius: FAFRadius.sm))
-
-            Text(recipe.title)
-                .font(FAFTypography.bodyBold)
-                .foregroundColor(.fafTextPrimary)
-                .lineLimit(1)
-
-            if let time = recipe.totalTimeMinutes {
-                Text("\(time) min")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
-            }
-        }
-        .frame(width: 120)
-    }
-
-    private var recipePlaceholder: some View {
-        Rectangle()
-            .fill(Color.fafGrayXLight)
-            .overlay(
-                FAFIcon(.fork, size: 24, color: .fafGray)
-            )
+        .foregroundColor(Theme.ink2)
+        .padding(.top, 10)
+        .contentShape(Rectangle())
     }
 }
 
 #Preview {
     HomeView()
+        .environmentObject(TabRouter())
 }

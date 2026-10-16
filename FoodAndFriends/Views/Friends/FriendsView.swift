@@ -1,225 +1,186 @@
 import SwiftUI
 
+/// Friends — who's waiting to be let in, and who's already at your table.
 struct FriendsView: View {
+    /// Opened as a sheet from the Table: it closes itself.
+    var showsClose: Bool = false
+
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject var friendService = FriendService.shared
     @ObservedObject var userService = UserService.shared
 
     @State private var showAddFriend = false
+    @State private var answering: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: FAFSpacing.lg) {
-                    // Pending Requests Section
+                VStack(alignment: .leading, spacing: Theme.spacingLG) {
+                    plate
+
                     if !friendService.pendingRequests.isEmpty {
-                        VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                            Text("Friend Requests")
-                                .font(FAFTypography.h3)
-                                .foregroundColor(.fafTextPrimary)
-                                .padding(.horizontal, FAFSpacing.lg)
-
-                            ForEach(friendService.pendingRequests) { request in
-                                FriendRequestRow(request: request)
+                        VStack(alignment: .leading, spacing: 0) {
+                            SectionHead(title: "Waiting for you", figure: "\(friendService.pendingRequests.count)")
+                                .padding(.bottom, 2)
+                            ForEach(Array(friendService.pendingRequests.enumerated()), id: \.element.id) { position, request in
+                                requestLine(request)
+                                if position < friendService.pendingRequests.count - 1 {
+                                    DashedDivider()
+                                }
                             }
                         }
-                        .padding(.top, FAFSpacing.md)
                     }
 
-                    // Friends List
-                    VStack(alignment: .leading, spacing: FAFSpacing.sm) {
-                        Text("My Friends")
-                            .font(FAFTypography.h3)
-                            .foregroundColor(.fafTextPrimary)
-                            .padding(.horizontal, FAFSpacing.lg)
-
+                    VStack(alignment: .leading, spacing: 0) {
+                        SectionHead(title: "At your table", figure: "\(friendService.friends.count)")
+                            .padding(.bottom, 2)
                         if friendService.friends.isEmpty {
-                            EmptyFriendsView(showAddFriend: $showAddFriend)
+                            BlankLeaf(
+                                note: "No friends here yet. Find them by their username.",
+                                action: (label: "Find friends", run: { showAddFriend = true })
+                            )
                         } else {
-                            ForEach(friendService.friends) { friend in
-                                FriendRow(friend: friend)
+                            ForEach(Array(friendService.friends.enumerated()), id: \.element.id) { position, friend in
+                                NavigationLink(value: friend.id ?? "") {
+                                    friendLine(friend)
+                                }
+                                .buttonStyle(.plain)
+                                if position < friendService.friends.count - 1 {
+                                    DashedDivider()
+                                }
                             }
                         }
                     }
-                    .padding(.top, FAFSpacing.md)
                 }
-                .padding(.bottom, FAFSpacing.xl)
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.fafBackground.ignoresSafeArea())
-            .navigationTitle("Friends")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showAddFriend = true
-                    } label: {
-                        FAFIcon(.plus, size: 20, color: .fafCoral)
+            .background(Theme.paper)
+            .navigationBarTitleDisplayMode(.inline)
+            .plainToolbar {
+                if showsClose {
+                    ToolbarItem(placement: .topBarLeading) {
+                        MarginButton("Close") { dismiss() }
                     }
+                }
+            }
+            .toolbar(showsClose ? .visible : .hidden, for: .navigationBar)
+            .navigationDestination(for: String.self) { friendId in
+                if let friend = friendService.friends.first(where: { $0.id == friendId }) {
+                    UserProfileView(user: friend)
                 }
             }
             .sheet(isPresented: $showAddFriend) {
                 AddFriendView()
             }
+            .task { await loadData() }
+            .refreshable { await loadData() }
         }
     }
-}
 
-// MARK: - Friend Request Row
+    // MARK: - Plate
 
-struct FriendRequestRow: View {
-    let request: FriendRequest
-    @ObservedObject var friendService = FriendService.shared
-    @State private var isLoading = false
-
-    var body: some View {
-        HStack(spacing: FAFSpacing.md) {
-            // Avatar
-            Circle()
-                .fill(Color.fafGrayXLight)
-                .frame(width: 50, height: 50)
-                .overlay(
-                    FAFIcon(.profile, size: 24, color: .fafGray)
-                )
-
-            // Info
-            VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-                Text("@\(request.fromUsername ?? "unknown")")
-                    .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafTextPrimary)
-                Text("wants to be friends")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
+    private var plate: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DoubleRule()
+                .padding(.bottom, 12)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Friends")
+                    .font(.plate(32))
+                    .foregroundColor(Theme.ink)
+                Spacer(minLength: Theme.spacingSM)
+                Button {
+                    showAddFriend = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(Theme.ink)
+                        .frame(width: 36, height: 36, alignment: .trailing)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Find a friend")
             }
+            Text("Who cooks with you".uppercased())
+                .smallCaps(10, weight: .medium, tracking: 1.4)
+                .foregroundColor(Theme.ink2)
+                .padding(.top, 4)
+            Rule()
+                .padding(.top, 12)
+        }
+        .padding(.top, Theme.spacingSM)
+    }
 
-            Spacer()
+    // MARK: - Lines
 
-            // Actions
-            if isLoading {
-                ProgressView()
+    private func requestLine(_ request: FriendRequest) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Monogram(name: request.fromUsername ?? "?", size: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("@\(request.fromUsername ?? "someone")")
+                    .font(.plate(17, .semibold))
+                    .foregroundColor(Theme.ink)
+                Text("would like a seat at your table")
+                    .font(.setting(12).italic())
+                    .foregroundColor(Theme.ink3)
+            }
+            Spacer(minLength: Theme.spacingSM)
+            if answering == request.id {
+                ProgressView().tint(Theme.ink3)
             } else {
-                HStack(spacing: FAFSpacing.xs) {
-                    Button {
-                        Task { await acceptRequest() }
-                    } label: {
-                        FAFIcon(.check, size: 20, color: .fafSage)
-                    }
-                    .frame(width: 44, height: 44)
-                    .background(Color.fafSage.opacity(0.1))
-                    .cornerRadius(FAFRadius.sm)
-
-                    Button {
-                        Task { await declineRequest() }
-                    } label: {
-                        FAFIcon(.close, size: 20, color: .fafCoral)
-                    }
-                    .frame(width: 44, height: 44)
-                    .background(Color.fafCoral.opacity(0.1))
-                    .cornerRadius(FAFRadius.sm)
-                }
+                MarginButton("Decline") { Task { await answer(request, accept: false) } }
+                MarginButton("Accept") { Task { await answer(request, accept: true) } }
+                    .padding(.leading, Theme.spacingSM)
             }
         }
-        .padding(FAFSpacing.md)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
-        .padding(.horizontal, FAFSpacing.lg)
+        .padding(.vertical, 12)
     }
 
-    private func acceptRequest() async {
-        isLoading = true
+    private func friendLine(_ friend: FAFUser) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Monogram(name: friend.displayName ?? friend.username, imageURL: friend.profileImageURL, size: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(friend.displayName ?? "@\(friend.username)")
+                    .font(.plate(17, .semibold))
+                    .foregroundColor(Theme.ink)
+                Text([friend.displayName == nil ? nil : "@\(friend.username)", friend.location.isEmpty ? nil : friend.location]
+                    .compactMap { $0 }.joined(separator: " · "))
+                    .font(.setting(12))
+                    .foregroundColor(Theme.ink3)
+            }
+            Spacer(minLength: Theme.spacingSM)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(Theme.ink3)
+        }
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Actions
+
+    private func answer(_ request: FriendRequest, accept: Bool) async {
+        answering = request.id
+        defer { answering = nil }
         do {
-            try await friendService.acceptFriendRequest(request)
-        } catch {
-            print("Error accepting request: \(error)")
-        }
-        isLoading = false
-    }
-
-    private func declineRequest() async {
-        isLoading = true
-        do {
-            try await friendService.declineFriendRequest(request)
-        } catch {
-            print("Error declining request: \(error)")
-        }
-        isLoading = false
-    }
-}
-
-// MARK: - Friend Row
-
-struct FriendRow: View {
-    let friend: FAFUser
-
-    var body: some View {
-        NavigationLink(destination: UserProfileView(user: friend)) {
-            HStack(spacing: FAFSpacing.md) {
-                // Avatar
-                if let imageURL = friend.profileImageURL, let url = URL(string: imageURL) {
-                    AsyncImage(url: url) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Circle()
-                            .fill(Color.fafGrayXLight)
-                            .overlay(
-                                FAFIcon(.profile, size: 24, color: .fafGray)
-                            )
-                    }
-                    .frame(width: 50, height: 50)
-                    .clipShape(Circle())
-                } else {
-                    Circle()
-                        .fill(Color.fafGrayXLight)
-                        .frame(width: 50, height: 50)
-                        .overlay(
-                            FAFIcon(.profile, size: 24, color: .fafGray)
-                        )
-                }
-
-                // Info
-                VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-                    Text("@\(friend.username)")
-                        .font(FAFTypography.bodyBold)
-                        .foregroundColor(.fafTextPrimary)
-                    Text(friend.location)
-                        .font(FAFTypography.caption)
-                        .foregroundColor(.fafGray)
-                }
-
-                Spacer()
+            if accept {
+                try await friendService.acceptFriendRequest(request)
+            } else {
+                try await friendService.declineFriendRequest(request)
             }
-            .padding(FAFSpacing.md)
-            .background(Color.fafCardBackground)
-            .cornerRadius(FAFRadius.md)
-            .padding(.horizontal, FAFSpacing.lg)
+        } catch {
+            print("Error answering friend request: \(error)")
         }
-        .buttonStyle(.plain)
     }
-}
 
-// MARK: - Empty State
-
-struct EmptyFriendsView: View {
-    @Binding var showAddFriend: Bool
-
-    var body: some View {
-        VStack(spacing: FAFSpacing.md) {
-            FAFIcon(.friends, size: 48, color: .fafGray)
-
-            Text("No friends yet")
-                .font(FAFTypography.body)
-                .foregroundColor(.fafGray)
-
-            Button {
-                showAddFriend = true
-            } label: {
-                Text("Find Friends")
-                    .font(FAFTypography.button)
-                    .foregroundColor(.fafCoral)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, FAFSpacing.xxl)
+    private func loadData() async {
+        guard let userId = userService.currentUser?.id else { return }
+        #if DEBUG
+        if DesignHarness.isOn { return }
+        #endif
+        await friendService.fetchPendingRequests(for: userId)
+        await friendService.fetchFriends(for: userId)
     }
 }
 

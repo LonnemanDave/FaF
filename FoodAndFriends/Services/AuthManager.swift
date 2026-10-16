@@ -68,7 +68,10 @@ class AuthManager: ObservableObject {
                       let userId = self.firebaseUser?.uid,
                       self.authState == .signedIn else { return }
 
-                let friendIds = friends.compactMap { $0.id }
+                // Only friendships that run both ways: the rules check the
+                // other cook's list, and one lopsided entry would fail the
+                // whole batched query — the Friends shelf and the Table with it.
+                let friendIds = friends.filter { $0.friends.contains(userId) }.compactMap { $0.id }
 
                 // Update recipe and feed listeners with new friend IDs
                 RecipeService.shared.updateFriendsListener(friendIds: friendIds)
@@ -105,11 +108,15 @@ class AuthManager: ObservableObject {
     }
 
     private func startAllListeners(userId: String) {
+        #if DEBUG
+        if DesignHarness.isOn { return } // the gallery's sample kitchen stays put
+        #endif
         // Start core listeners
         UserService.shared.startListening(userId: userId)
         FriendService.shared.startListening(userId: userId)
         RecipeService.shared.startListening(userId: userId)
         MealPlanService.shared.startListening(userId: userId)
+        ShoppingListService.shared.startListening(userId: userId)
 
         // Feed and friends recipes need friend IDs - will be updated by FriendService listener
         // Initial empty state, will populate when friends load
@@ -122,6 +129,7 @@ class AuthManager: ObservableObject {
         FriendService.shared.stopListening()
         RecipeService.shared.stopListening()
         MealPlanService.shared.stopListening()
+        ShoppingListService.shared.stopListening()
         FeedService.shared.stopListening()
     }
 

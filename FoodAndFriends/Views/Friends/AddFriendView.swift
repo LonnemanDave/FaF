@@ -1,5 +1,6 @@
 import SwiftUI
 
+/// Finding a friend by their username and asking them to the table.
 struct AddFriendView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var friendService = FriendService.shared
@@ -12,95 +13,51 @@ struct AddFriendView: View {
     @State private var errorMessage = ""
     @State private var sentRequestIds: Set<String> = []
 
-    @FocusState private var isSearchFocused: Bool
-
     private let searchDebouncer = Debouncer(delay: 0.3)
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Search Bar
-                HStack(spacing: FAFSpacing.sm) {
-                    FAFIcon(.search, size: 18, color: .fafGray)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.spacingLG) {
+                    PlateHeader(title: "Find a friend", subtitle: "By their username")
 
-                    TextField("Search by username", text: $searchText)
-                        .font(FAFTypography.body)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .focused($isSearchFocused)
+                    SearchLine(placeholder: "Username", text: $searchText)
                         .onChange(of: searchText) { _, newValue in
                             performSearch(query: newValue)
                         }
 
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                            searchResults = []
-                        } label: {
-                            FAFIcon(.close, size: 16, color: .fafGray)
-                        }
-                    }
-                }
-                .padding(FAFSpacing.md)
-                .background(Color.fafInputBackground)
-                .cornerRadius(FAFRadius.md)
-                .padding(FAFSpacing.lg)
-
-                // Results
-                if isSearching {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                } else if searchResults.isEmpty && !searchText.isEmpty {
-                    Spacer()
-                    VStack(spacing: FAFSpacing.sm) {
-                        FAFIcon(.search, size: 48, color: .fafGray)
-                        Text("No users found")
-                            .font(FAFTypography.body)
-                            .foregroundColor(.fafGray)
-                    }
-                    Spacer()
-                } else if searchResults.isEmpty {
-                    Spacer()
-                    VStack(spacing: FAFSpacing.sm) {
-                        FAFIcon(.friends, size: 48, color: .fafGray)
-                        Text("Search for friends by username")
-                            .font(FAFTypography.body)
-                            .foregroundColor(.fafGray)
-                    }
-                    Spacer()
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: FAFSpacing.sm) {
-                            ForEach(searchResults) { user in
-                                SearchResultRow(
-                                    user: user,
-                                    isSent: sentRequestIds.contains(user.id ?? ""),
-                                    onSendRequest: { sendRequest(to: user) }
-                                )
+                    if isSearching {
+                        ProgressView()
+                            .tint(Theme.ink3)
+                            .frame(maxWidth: .infinity)
+                    } else if searchText.isEmpty {
+                        BlankLeaf(note: "Type the start of a friend's username — they'll get a note asking them to your table.")
+                    } else if searchResults.isEmpty {
+                        BlankLeaf(note: "No one goes by \"\(searchText)\".")
+                    } else {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(searchResults.enumerated()), id: \.element.id) { position, user in
+                                resultLine(user)
+                                if position < searchResults.count - 1 {
+                                    DashedDivider()
+                                }
                             }
                         }
-                        .padding(.horizontal, FAFSpacing.lg)
-                        .padding(.top, FAFSpacing.sm)
                     }
                 }
+                .padding(.top, Theme.spacingSM)
+                .padding(.bottom, Theme.spacingXL)
+                .page()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.fafBackground.ignoresSafeArea())
-            .navigationTitle("Add Friend")
+            .background(Theme.paper)
+            .scrollDismissesKeyboard(.interactively)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .foregroundColor(.fafCoral)
+            .plainToolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    MarginButton("Cancel") { dismiss() }
                 }
             }
-            .onAppear {
-                isSearchFocused = true
-                loadSentRequests()
-            }
+            .onAppear { loadSentRequests() }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -108,6 +65,39 @@ struct AddFriendView: View {
             }
         }
     }
+
+    private func resultLine(_ user: FAFUser) -> some View {
+        let isFriend = user.id.map { userService.currentUser?.friends.contains($0) ?? false } ?? false
+        let isSent = user.id.map(sentRequestIds.contains) ?? false
+        return HStack(alignment: .center, spacing: 12) {
+            Monogram(name: user.displayName ?? user.username, imageURL: user.profileImageURL, size: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("@\(user.username)")
+                    .font(.plate(17, .semibold))
+                    .foregroundColor(Theme.ink)
+                if !user.location.isEmpty {
+                    Text(user.location)
+                        .font(.setting(12))
+                        .foregroundColor(Theme.ink3)
+                }
+            }
+            Spacer(minLength: Theme.spacingSM)
+            if isFriend {
+                Text("At your table".uppercased())
+                    .smallCaps(9, weight: .semibold, tracking: 1.2)
+                    .foregroundColor(Theme.herb)
+            } else if isSent {
+                Text("Sent".uppercased())
+                    .smallCaps(9, weight: .semibold, tracking: 1.2)
+                    .foregroundColor(Theme.ink3)
+            } else {
+                MarginButton("Add") { sendRequest(to: user) }
+            }
+        }
+        .padding(.vertical, 12)
+    }
+
+    // MARK: - Actions
 
     private func performSearch(query: String) {
         guard !query.isEmpty else {
@@ -151,79 +141,6 @@ struct AddFriendView: View {
             await friendService.fetchSentRequests(for: userId)
             sentRequestIds = Set(friendService.sentRequests.map { $0.toUserId })
         }
-    }
-}
-
-// MARK: - Search Result Row
-
-struct SearchResultRow: View {
-    let user: FAFUser
-    let isSent: Bool
-    let onSendRequest: () -> Void
-
-    @ObservedObject var userService = UserService.shared
-
-    var body: some View {
-        HStack(spacing: FAFSpacing.md) {
-            // Avatar
-            Circle()
-                .fill(Color.fafGrayXLight)
-                .frame(width: 50, height: 50)
-                .overlay(
-                    FAFIcon(.profile, size: 24, color: .fafGray)
-                )
-
-            // Info
-            VStack(alignment: .leading, spacing: FAFSpacing.xxs) {
-                Text("@\(user.username)")
-                    .font(FAFTypography.bodyBold)
-                    .foregroundColor(.fafTextPrimary)
-                Text(user.location)
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
-            }
-
-            Spacer()
-
-            // Add Button
-            if isAlreadyFriend {
-                Text("Friends")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
-                    .padding(.horizontal, FAFSpacing.md)
-                    .padding(.vertical, FAFSpacing.xs)
-                    .background(Color.fafGrayXLight)
-                    .cornerRadius(FAFRadius.sm)
-            } else if isSent {
-                Text("Sent")
-                    .font(FAFTypography.caption)
-                    .foregroundColor(.fafGray)
-                    .padding(.horizontal, FAFSpacing.md)
-                    .padding(.vertical, FAFSpacing.xs)
-                    .background(Color.fafGrayXLight)
-                    .cornerRadius(FAFRadius.sm)
-            } else {
-                Button {
-                    onSendRequest()
-                } label: {
-                    Text("Add")
-                        .font(FAFTypography.button)
-                        .foregroundColor(.fafWhite)
-                        .padding(.horizontal, FAFSpacing.md)
-                        .padding(.vertical, FAFSpacing.xs)
-                        .background(Color.fafCoral)
-                        .cornerRadius(FAFRadius.sm)
-                }
-            }
-        }
-        .padding(FAFSpacing.md)
-        .background(Color.fafCardBackground)
-        .cornerRadius(FAFRadius.md)
-    }
-
-    private var isAlreadyFriend: Bool {
-        guard let userId = user.id else { return false }
-        return userService.currentUser?.friends.contains(userId) ?? false
     }
 }
 

@@ -8,6 +8,7 @@ enum AIServiceError: LocalizedError {
     case rateLimited
     case decodingError(Error)
     case invalidResponse
+    case noConsent
 
     var errorDescription: String? {
         switch self {
@@ -25,6 +26,8 @@ enum AIServiceError: LocalizedError {
             return "Failed to parse AI response. Please try again."
         case .invalidResponse:
             return "Invalid response from AI. Please try again."
+        case .noConsent:
+            return "Agree to requests being sent to Anthropic first, under The AI assistant."
         }
     }
 }
@@ -33,16 +36,35 @@ enum AIServiceError: LocalizedError {
 class AIService: ObservableObject {
     static let shared = AIService()
 
+    /// Off for the first App Store release: no screens, no settings line,
+    /// nothing sent anywhere. Turning it back on also means restoring the
+    /// AI sections of the privacy policy, terms, review notes and App
+    /// Privacy answers (see design/store/checklist.md).
+    static let isEnabled = false
+
     private let baseURL = "https://api.anthropic.com/v1/messages"
-    private let modelId = "claude-3-haiku-20240307"
+    private let modelId = "claude-haiku-5-5"
     private let apiVersion = "2023-06-01"
 
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published private(set) var hasValidAPIKey = false
 
+    /* Guideline 5.1.2(i): what a cook types is sent to Anthropic, a third
+     * party, so they're told so and agree before the first request. The
+     * assistant only counts as ready once both the key and the agreement
+     * are there — a key saved before the agreement existed waits for it. */
+    private static let consentKey = "aiSharingConsent"
+    @Published private(set) var hasSharingConsent = UserDefaults.standard.bool(forKey: AIService.consentKey)
+
     private init() {
-        hasValidAPIKey = KeychainManager.shared.hasAPIKey()
+        hasValidAPIKey = Self.isEnabled && KeychainManager.shared.hasAPIKey() && hasSharingConsent
+    }
+
+    func setSharingConsent(_ agreed: Bool) {
+        hasSharingConsent = agreed
+        UserDefaults.standard.set(agreed, forKey: Self.consentKey)
+        refreshAPIKeyStatus()
     }
 
     // MARK: - API Key Management
@@ -51,6 +73,8 @@ class AIService: ObservableObject {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
+
+        guard hasSharingConsent else { throw AIServiceError.noConsent }
 
         // Test the API key with a simple request
         let testMessage = ClaudeMessage(role: "user", content: "Say 'ok' and nothing else.")
@@ -72,7 +96,7 @@ class AIService: ObservableObject {
     }
 
     func refreshAPIKeyStatus() {
-        hasValidAPIKey = KeychainManager.shared.hasAPIKey()
+        hasValidAPIKey = Self.isEnabled && KeychainManager.shared.hasAPIKey() && hasSharingConsent
     }
 
     // MARK: - Recipe Generation
