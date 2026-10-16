@@ -31,25 +31,22 @@
 	<string>1</string>
 	<key>GIDClientID</key>
 	<string>466358991702-iamnbk9rg0l1ss68enmhjudrg8d75c1j.apps.googleusercontent.com</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Food &amp; Friends uses the camera when you tap Photo on a recipe step — for example, to keep a picture of the onions at the right brown. Photos are saved to that recipe.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Food and Friends uses your location to help you find nearby dining spots and connect with friends in your area.</string>
+	<string>Food &amp; Friends uses your location once, when you tap Find me, to fill in your city — for example "Cincinnati, OH" on your profile so friends know where you cook. Your exact location is never stored or shared.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
-		<string>AccentColor</string>
+		<string>LaunchBackground</string>
 	</dict>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 </dict>
 </plist>

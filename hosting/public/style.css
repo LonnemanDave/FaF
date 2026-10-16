@@ -1,0 +1,171 @@
+/* Food & Friends — a printed cook's journal.
+   Warm paper, ink type, hairline rules, square corners, paprika used sparingly. */
+
+:root {
+  --paper: #F6F1E7;
+  --paper-2: #EFE8DA;
+  --ink: #1B1916;
+  --ink-2: #4E473C;
+  --ink-3: #7D7363;
+  --rule: #D8CEB9;
+  --paprika: #B4462B;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+  --text: "Iowan Old Style", Georgia, Cambria, "Times New Roman", serif;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #12100E;
+    --paper-2: #1B1815;
+    --ink: #F0EBE0;
+    --ink-2: #C4BBAA;
+    --ink-3: #8F8675;
+    --rule: #34302A;
+    --paprika: #E07259;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--text);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2.5rem 1rem 4rem;
+}
+
+/* Masthead: the name, printed small, with a rule under it. */
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--ink);
+  margin-bottom: 2.25rem;
+}
+.masthead a.name {
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  letter-spacing: 0.01em;
+}
+.masthead nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
+.masthead nav a,
+.label {
+  font-variant: small-caps;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.08em;
+  font-size: 0.95rem;
+  color: var(--ink-3);
+  text-decoration: none;
+}
+.masthead nav a:hover,
+.masthead nav a[aria-current="page"] { color: var(--ink); }
+.masthead nav a[aria-current="page"] { border-bottom: 1px solid var(--paprika); }
+
+h1, h2, h3 {
+  font-family: var(--serif);
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0;
+  color: var(--ink);
+}
+h1 { font-size: 2.1rem; letter-spacing: -0.01em; }
+h2 {
+  font-size: 1.3rem;
+  margin-top: 2.25rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--rule);
+}
+h3 { font-size: 1.05rem; margin-top: 1.4rem; }
+
+.dateline {
+  margin: 0.4rem 0 0;
+  color: var(--ink-3);
+}
+
+p, ul, ol, dl { margin: 0.75rem 0 0; }
+ul, ol { padding-left: 1.25rem; }
+li + li { margin-top: 0.4rem; }
+li::marker { color: var(--ink-3); }
+strong { font-weight: 600; }
+
+a { color: var(--paprika); text-underline-offset: 0.15em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+
+.lede { font-size: 1.12rem; color: var(--ink-2); margin-top: 0.9rem; }
+
+/* FAQ entries: question set as a small heading, answer beneath. */
+dl.qa dt {
+  font-family: var(--serif);
+  font-weight: 600;
+  margin-top: 1.4rem;
+}
+dl.qa dd { margin: 0.3rem 0 0; color: var(--ink-2); }
+
+/* A boxed note, square-cornered, hairline border. */
+.note {
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  padding: 0.9rem 1rem;
+  margin-top: 1.25rem;
+}
+.note p:first-child { margin-top: 0; }
+
+/* Index page: a title page more than a landing page. */
+.title-page { padding-top: 3rem; }
+.title-page h1 { font-size: 2.8rem; }
+.title-page .ornament {
+  width: 3rem;
+  height: 0;
+  border-top: 2px solid var(--paprika);
+  margin: 1.5rem 0;
+}
+.contents { list-style: none; padding: 0; margin-top: 2rem; border-top: 1px solid var(--ink); }
+.contents li { margin: 0; border-bottom: 1px solid var(--rule); }
+.contents a {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+.contents a:hover .entry { color: var(--paprika); }
+.contents .entry { font-family: var(--serif); font-size: 1.1rem; }
+.contents .what { color: var(--ink-3); text-align: right; }
+
+footer.colophon {
+  margin-top: 3.5rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-size: 0.9rem;
+}
+footer.colophon a { color: var(--ink-3); }
+
+@media (max-width: 30rem) {
+  body { font-size: 16px; }
+  h1 { font-size: 1.8rem; }
+  .title-page h1 { font-size: 2.2rem; }
+  .contents a { flex-direction: column; gap: 0.1rem; }
+  .contents .what { text-align: left; }
+}
+
+.title-page footer.colophon { border-top: 0; margin-top: 2rem; padding-top: 0; }

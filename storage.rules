@@ -1,13 +1,26 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /profile_images/{imageId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+    function signedIn() { return request.auth != null; }
+    function isPhoto() {
+      return request.resource.contentType.matches('image/.*')
+        && request.resource.size < 10 * 1024 * 1024;
     }
-    match /recipe_images/{imageId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+
+    // profile_images/{uid}.jpg — only you can put up or take down yours.
+    match /profile_images/{fileName} {
+      allow read: if signedIn();
+      allow write: if signedIn() && fileName == request.auth.uid + '.jpg'
+        && (request.resource == null || isPhoto());
+    }
+
+    // recipe_images/{recipeId}_{time}.jpg and variation_{id}_{time}.jpg.
+    // Each upload is a new, time-stamped file: photos can be added but not
+    // overwritten or removed from the app — account deletion clears them.
+    match /recipe_images/{fileName} {
+      allow read: if signedIn();
+      allow create: if signedIn() && isPhoto();
+      allow update, delete: if false;
     }
   }
 }

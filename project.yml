@@ -22,6 +22,9 @@ packages:
 
 targets:
   FoodAndFriends:
+    scheme:
+      testTargets:
+        - FoodAndFriendsTests
     type: application
     platform: iOS
     deploymentTarget: "17.0"
@@ -30,6 +33,10 @@ targets:
         excludes:
           - "**/.DS_Store"
           - "**/Info.plist"
+    entitlements:
+      path: FoodAndFriends/FoodAndFriends.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
     info:
       path: FoodAndFriends/Info.plist
       properties:
@@ -41,16 +48,13 @@ targets:
         CFBundlePackageType: $(PRODUCT_BUNDLE_PACKAGE_TYPE)
         CFBundleExecutable: $(EXECUTABLE_NAME)
         UILaunchScreen:
-          UIColorName: AccentColor
+          UIColorName: LaunchBackground
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        UISupportedInterfaceOrientations~ipad:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationPortraitUpsideDown
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
-        NSLocationWhenInUseUsageDescription: "Food and Friends uses your location to help you find nearby dining spots and connect with friends in your area."
+        ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: "Food & Friends uses the camera when you tap Photo on a recipe step — for example, to keep a picture of the onions at the right brown. Photos are saved to that recipe."
+        NSLocationWhenInUseUsageDescription: "Food & Friends uses your location once, when you tap Find me, to fill in your city — for example \"Cincinnati, OH\" on your profile so friends know where you cook. Your exact location is never stored or shared."
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - com.googleusercontent.apps.466358991702-iamnbk9rg0l1ss68enmhjudrg8d75c1j
@@ -60,6 +64,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.foodandfriends.app
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1"
         DEVELOPMENT_TEAM: 47M8L4G38J
         CODE_SIGN_STYLE: Automatic
     dependencies:
@@ -71,7 +76,22 @@ targets:
         product: FirebaseFirestore
       - package: Firebase
         product: FirebaseStorage
+      - package: Firebase
+        product: FirebaseFunctions
       - package: GoogleSignIn
         product: GoogleSignIn
       - package: GoogleSignIn
         product: GoogleSignInSwift
+
+  FoodAndFriendsTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: FoodAndFriendsTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.foodandfriends.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: FoodAndFriends

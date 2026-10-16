@@ -1,56 +1,134 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function userDoc(uid) { return get(/databases/$(database)/documents/users/$(uid)); }
+    function hasBlocked(owner, other) {
+      return exists(/databases/$(database)/documents/users/$(owner)/blocked/$(other));
+    }
+    // You, or someone whose friends list has you on it. Their list, not
+    // yours: only they (or an accepted request) can put you there.
+    function isMineOrAFriends(authorId) {
+      return authorId == me() || me() in userDoc(authorId).data.get('friends', []);
+    }
+
+    /* Profiles are readable to every signed-in cook — that's how friends
+     * are found. Only you write yours, with one exception: the friends
+     * list, where someone else may take themselves off it (unfriending,
+     * blocking) or put themselves on it, but only by accepting a request
+     * you sent them, and never once you've blocked them. */
     match /users/{userId} {
-      allow read: if request.auth != null;
-      // Allow users to write their own document
-      allow create, delete: if request.auth != null && request.auth.uid == userId;
-      // Allow update if it's your own doc OR only updating friends array (for friend accept/remove)
-      allow update: if request.auth != null && (
-        request.auth.uid == userId ||
-        // Allow updating friends array for bidirectional friend relationships
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends', 'updatedAt']))
-      );
+      allow read: if signedIn();
+      allow create, delete: if signedIn() && me() == userId;
+      allow update: if signedIn() && (me() == userId || changesOnlyMyPlaceInTheirFriends(userId));
+
+      function friendsBefore() { return resource.data.get('friends', []).toSet(); }
+      function friendsAfter() { return request.resource.data.get('friends', []).toSet(); }
+      function changesOnlyMyPlaceInTheirFriends(userId) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends', 'updatedAt'])
+          && (
+            friendsAfter() == friendsBefore().difference([me()].toSet())
+            || (
+              friendsAfter() == friendsBefore().union([me()].toSet())
+              && getAfter(/databases/$(database)/documents/friendRequests/$(userId + '_' + me())).data.status == 'accepted'
+              && !hasBlocked(userId, me())
+            )
+          );
+      }
+
+      // Who you've blocked. Yours alone — a blocked cook can't find out.
+      match /blocked/{blockedId} {
+        allow read, write: if signedIn() && me() == userId;
+      }
     }
 
+    /* A request's id is "{from}_{to}", so accepting one can be proved
+     * above. Only the two people in it can see it. */
     match /friendRequests/{requestId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null &&
-        (resource.data.fromUserId == request.auth.uid ||
-         resource.data.toUserId == request.auth.uid);
+      allow read: if signedIn()
+        && (resource.data.fromUserId == me() || resource.data.toUserId == me());
+      allow create: if signedIn()
+        && request.resource.data.fromUserId == me()
+        && request.resource.data.toUserId != me()
+        && requestId == me() + '_' + request.resource.data.toUserId
+        && request.resource.data.status == 'pending'
+        && !hasBlocked(request.resource.data.toUserId, me());
+      allow update: if signedIn()
+        && request.resource.data.fromUserId == resource.data.fromUserId
+        && request.resource.data.toUserId == resource.data.toUserId
+        && (
+          // the one it was sent to answers it
+          (resource.data.toUserId == me() && request.resource.data.status in ['accepted', 'declined'])
+          // the sender asks again
+          || (resource.data.fromUserId == me() && request.resource.data.status == 'pending'
+              && !hasBlocked(resource.data.toUserId, me()))
+        );
+      allow delete: if signedIn()
+        && (resource.data.fromUserId == me() || resource.data.toUserId == me());
     }
 
+    /* A recipe shared with everyone is readable by every cook; otherwise
+     * only by you and your friends. */
     match /recipes/{recipeId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null &&
-        resource.data.authorId == request.auth.uid;
+      function canSee(recipe) {
+        return recipe.get('isPublic', false) == true || isMineOrAFriends(recipe.authorId);
+      }
+      function recipe() { return get(/databases/$(database)/documents/recipes/$(recipeId)).data; }
 
-      // Variations subcollection
+      allow read: if signedIn() && canSee(resource.data);
+      allow create: if signedIn() && request.resource.data.authorId == me();
+      allow update, delete: if signedIn() && resource.data.authorId == me();
+
+      // Someone's own take on a recipe, readable wherever the recipe is.
       match /variations/{variationId} {
-        allow read: if request.auth != null;
-        allow create: if request.auth != null;
-        // Allow update/delete if you're the variation author OR the recipe owner
-        allow update, delete: if request.auth != null && (
-          resource.data.authorId == request.auth.uid ||
-          get(/databases/$(database)/documents/recipes/$(recipeId)).data.authorId == request.auth.uid
+        allow read: if signedIn() && canSee(recipe());
+        allow create: if signedIn() && request.resource.data.authorId == me() && canSee(recipe());
+        allow update: if signedIn() && (
+          resource.data.authorId == me()
+          || recipe().authorId == me()
+          // anyone who can see it may like it — one more, nothing else
+          || (canSee(recipe())
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+              && request.resource.data.likeCount == resource.data.get('likeCount', 0) + 1)
         );
+        allow delete: if signedIn() && (resource.data.authorId == me() || recipe().authorId == me());
       }
     }
 
     match /mealPlans/{mealPlanId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null &&
-        resource.data.authorId == request.auth.uid;
+      allow read: if signedIn() && isMineOrAFriends(resource.data.authorId);
+      allow create: if signedIn() && request.resource.data.authorId == me();
+      allow update, delete: if signedIn() && resource.data.authorId == me();
     }
 
+    // A shopping list is yours alone.
+    match /shoppingLists/{listId} {
+      allow read, update, delete: if signedIn() && resource.data.authorId == me();
+      allow create: if signedIn() && request.resource.data.authorId == me();
+    }
+
+    // The Table: what you and your friends have been cooking.
     match /activities/{activityId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null &&
-        resource.data.authorId == request.auth.uid;
+      allow read: if signedIn() && isMineOrAFriends(resource.data.authorId);
+      allow create: if signedIn() && request.resource.data.authorId == me();
+      allow update, delete: if signedIn() && resource.data.authorId == me();
+    }
+
+    /* Write-only from the app: a report can't be read back, edited or
+     * withdrawn, so nobody can find out who reported them. Reviewed from
+     * the Firebase console. */
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == me()
+        && request.resource.data.targetType in ['user', 'recipe', 'variation', 'mealPlan', 'activity']
+        && request.resource.data.targetId is string
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 200
+        && request.resource.data.get('note', '') is string
+        && request.resource.data.get('note', '').size() <= 1000;
+      allow read, update, delete: if false;
     }
   }
 }
